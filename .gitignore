@@ -8,3 +8,4 @@ local.properties
 *.apk
 *.apks
 *.keystore
+out/
