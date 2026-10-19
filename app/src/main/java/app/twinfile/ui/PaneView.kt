@@ -27,6 +27,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -71,11 +77,22 @@ fun PaneView(
             .border(if (focused) 1.5.dp else 0.dp, if (focused) twin.paneBorder.copy(alpha = 0.55f) else twin.pane, shape)
     ) {
         PaneHeader(vm.label(pane), pane, focused)
+        // Folder change: the new listing slides in from the side it came from and fades up.
+        val slide = remember(pane) { Animatable(0f) }
+        LaunchedEffect(pane.navTick) {
+            if (pane.navTick == 0 || !vm.prefs.animateNav) return@LaunchedEffect
+            slide.snapTo(pane.navDir.toFloat())
+            slide.animateTo(0f, tween(240, easing = FastOutSlowInEasing))
+        }
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = pane.listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = slide.value * size.width * 0.18f
+                        alpha = 1f - abs(slide.value) * 0.75f
+                    }
                     .pointerInput(pane, rows, showParent) {
                         swipeSelect(pane.listState, touchSlop,
                             isSelected = { it in pane.selected },

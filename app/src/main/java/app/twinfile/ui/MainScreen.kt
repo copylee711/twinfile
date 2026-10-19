@@ -5,7 +5,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -111,7 +113,7 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
     val scope = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
     var dlg by remember { mutableStateOf<Dlg?>(null) }
-    var sheet by remember { mutableStateOf(false) }
+    val sheet = remember { PullSheetState() }
     val prefs = vm.prefs
 
     LaunchedEffect(vm.toast) {
@@ -158,13 +160,13 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
                 }
                 OpsPanel()
                 if (active.selecting) SelectionBar(vm, active, show = { dlg = it })
-                else BottomBar(vm, active, show = { dlg = it }, openSheet = { sheet = true })
+                else BottomBar(vm, active, show = { dlg = it }, sheet = sheet)
             }
+            BookmarkPanel(vm, sheet)
             SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
         }
     }
 
-    if (sheet) BookmarkSheet(vm, onDismiss = { sheet = false })
     Ops.jobs.firstOrNull { it.conflict != null }?.let { job ->
         ConflictDialog(job.conflict!!) { r, all -> job.answer(r, all) }
     }
@@ -339,15 +341,14 @@ private fun BarButton(icon: ImageVector, label: String, enabled: Boolean = true,
 }
 
 @Composable
-private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, openSheet: () -> Unit) {
-    var drag = 0f
+private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, sheet: PullSheetState) {
+    // Dragging up pulls the bookmarks panel out with the finger.
     Column(
-        Modifier.fillMaxWidth().pointerInput(Unit) {
-            detectVerticalDragGestures(
-                onDragStart = { drag = 0f },
-                onVerticalDrag = { _, dy -> drag += dy; if (drag < -60f) { drag = 0f; openSheet() } },
-            )
-        },
+        Modifier.fillMaxWidth().draggable(
+            orientation = Orientation.Vertical,
+            state = rememberDraggableState { sheet.dragBy(it) },
+            onDragStopped = { v -> sheet.settle(v) },
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Hint that the bar can be pulled up for bookmarks.

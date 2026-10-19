@@ -25,6 +25,8 @@ class Prefs(dir: File) {
     var darkMode by mutableStateOf("SYSTEM")
     var showHidden by mutableStateOf(false)
     var compact by mutableStateOf(false)
+    /** Slide the list in when entering or leaving a folder. */
+    var animateNav by mutableStateOf(true)
     var trashEnabled by mutableStateOf(true)
     var trashByDefault by mutableStateOf(true)
     var trashAutoCleanDays by mutableStateOf(30)
@@ -45,6 +47,7 @@ class Prefs(dir: File) {
         darkMode = j.optString("darkMode", "SYSTEM")
         showHidden = j.optBoolean("showHidden", false)
         compact = j.optBoolean("compact", false)
+        animateNav = j.optBoolean("animateNav", true)
         trashEnabled = j.optBoolean("trashEnabled", true)
         trashByDefault = j.optBoolean("trashByDefault", true)
         trashAutoCleanDays = j.optInt("trashAutoCleanDays", 30)
@@ -70,7 +73,7 @@ class Prefs(dir: File) {
 
     private fun snapshot(): JSONObject {
         return JSONObject()
-            .put("dualPane", dualPane).put("palette", palette).put("darkMode", darkMode).put("showHidden", showHidden).put("compact", compact)
+            .put("dualPane", dualPane).put("palette", palette).put("darkMode", darkMode).put("showHidden", showHidden).put("compact", compact).put("animateNav", animateNav)
             .put("trashEnabled", trashEnabled).put("trashByDefault", trashByDefault)
             .put("trashAutoCleanDays", trashAutoCleanDays).put("keepMtime", keepMtime)
             .put("homeLeft", homeLeft).put("homeRight", homeRight)

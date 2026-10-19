@@ -157,6 +157,7 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
             Group("界面")
             Toggle("双栏", "竖屏左右两栏；关闭后只显示一栏", p.dualPane) { p.update { dualPane = it } }
             Toggle("紧凑列表", "更小的图标和行距", p.compact) { p.update { compact = it } }
+            Toggle("文件夹切换动画", "进入、返回文件夹时列表滑入", p.animateNav) { p.update { animateNav = it } }
             Toggle("显示隐藏文件", "以 . 开头的文件和文件夹", p.showHidden) { p.update { showHidden = it } }
             Group("文件操作")
             Toggle("保留修改时间", "复制、解压时保持原文件的修改时间", p.keepMtime) { p.update { keepMtime = it } }

@@ -1,6 +1,22 @@
 package app.twinfile.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -166,35 +182,94 @@ private fun DrawerItem(icon: ImageVector, label: String, sub: String? = null, on
     }
 }
 
+/**
+ * Height of the pull-up panel in px. It follows the finger while dragged and settles on
+ * closed, half or full when released.
+ */
+class PullSheetState {
+    var height by mutableFloatStateOf(0f)
+        private set
+    var max = 1f
+    val half get() = max * 0.5f
+    val visible get() = height > 0.5f
+
+    fun dragBy(dy: Float) {
+        height = (height - dy).coerceIn(0f, max)
+    }
+
+    /** [velocity] in px/s, negative is upwards. */
+    suspend fun settle(velocity: Float) {
+        val anchors = listOf(0f, half, max)
+        val target = when {
+            velocity < -1200f -> anchors.firstOrNull { it > height + 1f } ?: max
+            velocity > 1200f -> anchors.lastOrNull { it < height - 1f } ?: 0f
+            else -> anchors.minBy { kotlin.math.abs(it - height) }
+        }
+        animateTo(target, velocity)
+    }
+
+    suspend fun animateTo(target: Float, velocity: Float = 0f) {
+        androidx.compose.animation.core.animate(height, target, -velocity,
+            androidx.compose.animation.core.spring(dampingRatio = 0.9f, stiffness = 500f)) { v, _ -> height = v }
+    }
+}
+
 /** Pulled up from the bottom bar: recent places and bookmarks. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun BookmarkSheet(vm: MainViewModel, onDismiss: () -> Unit) {
+fun BookmarkPanel(vm: MainViewModel, state: PullSheetState) {
+    val scope = rememberCoroutineScope()
     var tab by remember { mutableIntStateOf(if (vm.prefs.bookmarks.isEmpty()) 0 else 1) }
     var editing by remember { mutableStateOf<Bookmark?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        TabRow(tab) {
-            Tab(tab == 0, { tab = 0 }, text = { Text("最近") })
-            Tab(tab == 1, { tab = 1 }, text = { Text("书签") })
-        }
-        LazyColumn(Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 520.dp)) {
-            if (tab == 0) {
-                if (vm.prefs.recent.isEmpty()) item { Empty("还没有访问记录") }
-                itemsIndexed(vm.prefs.recent, key = { _, r -> r.source + r.path }) { _, r ->
-                    SheetRow(r.path, Paths.name(r.path), r.isDir, onLong = null) {
-                        vm.openBookmark(vm.active, r.source, r.path, r.isDir); onDismiss()
+    val close: () -> Unit = { scope.launch { state.animateTo(0f) } }
+    BackHandler(state.visible) { close() }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        state.max = constraints.maxHeight * 0.82f
+        if (!state.visible) return@BoxWithConstraints
+        val frac = (state.height / state.half).coerceIn(0f, 1f)
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f * frac))
+            .pointerInput(Unit) { detectTapGestures { close() } })
+        val density = LocalDensity.current
+        val drag = Modifier.draggable(
+            orientation = Orientation.Vertical,
+            state = rememberDraggableState { state.dragBy(it) },
+            onDragStopped = { v -> state.settle(v) },
+        )
+        Surface(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(with(density) { state.height.toDp() }),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shadowElevation = 8.dp,
+        ) {
+            Column {
+                // The handle and tabs drag the panel; the list below scrolls.
+                Column(drag) {
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(LocalTwin.current.muted.copy(alpha = 0.4f)))
+                    }
+                    TabRow(tab, containerColor = Color.Transparent) {
+                        Tab(tab == 0, { tab = 0 }, text = { Text("最近") })
+                        Tab(tab == 1, { tab = 1 }, text = { Text("书签") })
                     }
                 }
-            } else {
-                if (vm.prefs.bookmarks.isEmpty()) item { Empty("在菜单里点「添加书签」，或长按文件选择「添加书签」") }
-                itemsIndexed(vm.prefs.bookmarks, key = { _, b -> b.source + b.path }) { _, b ->
-                    SheetRow(b.path, b.name, true, onLong = { editing = b }) {
-                        vm.openBookmark(vm.active, b.source, b.path); onDismiss()
+                LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
+                    if (tab == 0) {
+                        if (vm.prefs.recent.isEmpty()) item { Empty("还没有访问记录") }
+                        itemsIndexed(vm.prefs.recent, key = { _, r -> r.source + r.path }) { _, r ->
+                            SheetRow(r.path, Paths.name(r.path), r.isDir, onLong = null) {
+                                vm.openBookmark(vm.active, r.source, r.path, r.isDir); close()
+                            }
+                        }
+                    } else {
+                        if (vm.prefs.bookmarks.isEmpty()) item { Empty("在菜单里点「添加书签」，或长按文件选择「添加书签」") }
+                        itemsIndexed(vm.prefs.bookmarks, key = { _, b -> b.source + b.path }) { _, b ->
+                            SheetRow(b.path, b.name, true, onLong = { editing = b }) {
+                                vm.openBookmark(vm.active, b.source, b.path); close()
+                            }
+                        }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
     }
     editing?.let { b -> BookmarkEditor(vm, b) { editing = null } }
 }

@@ -32,6 +32,11 @@ class PaneState(val index: Int, source: FileSource, private val showHidden: () -
     var historyVersion by mutableIntStateOf(0)
     internal val scrollMemory = HashMap<Loc, Pair<Int, Int>>()
     internal var loadGen = 0
+    /** Bumped when a different folder's listing lands; drives the slide-in animation. */
+    var navTick by mutableIntStateOf(0)
+    /** +1 when the last navigation went deeper, -1 when it went up or back. */
+    var navDir = 1
+    internal var pendingDir = 1
 
     val loc get() = Loc(source.id, path)
     val canBack get() = historyVersion >= 0 && back.isNotEmpty()

@@ -73,6 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val sameFolder = target == pane.loc
+        pane.pendingDir = if (pane.path.isNotEmpty() && target.source == pane.source.id && Paths.isInside(path, pane.path)) 1 else -1
         if (push && !sameFolder && source.container == null) prefs.addRecent(source.id, path, true)
         pane.source = source
         pane.path = path
@@ -100,8 +101,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             result.onSuccess {
                 pane.raw = it
                 pane.error = null
-                if (!keepScroll) pane.listState.scrollToItem(restore.first, restore.second)
+                if (!keepScroll) {
+                    pane.listState.scrollToItem(restore.first, restore.second)
+                    pane.navDir = pane.pendingDir
+                    pane.navTick++
+                }
             }.onFailure {
+                if (!keepScroll) { pane.navDir = pane.pendingDir; pane.navTick++ }
                 FileLog.w("list $path", it)
                 pane.raw = emptyList()
                 pane.error = it.message ?: "无法打开"
