@@ -46,6 +46,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val vm: MainViewModel by viewModels()
+    /** SyncBoard's approval dialog; it needs a result-style launch to know who is asking. */
+    private val syncBoardApproval = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        vm.syncBoardApproval?.invoke(r.resultCode == RESULT_OK)
+        vm.syncBoardApproval = null
+    }
     private var granted by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +76,16 @@ class MainActivity : ComponentActivity() {
                 if (!granted) PermissionScreen(::requestStorage)
                 else AppNav()
                 vm.update?.let { UpdateDialog(vm, it) }
+                androidx.compose.runtime.LaunchedEffect(vm.syncBoardApproval) {
+                    if (vm.syncBoardApproval != null) {
+                        try {
+                            syncBoardApproval.launch(app.twinfile.pc.SyncBoardBridge.approvalIntent())
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            vm.say("请先把 SyncBoard 更新到最新版本")
+                            vm.syncBoardApproval = null
+                        }
+                    }
+                }
             }
         }
     }
@@ -149,7 +164,8 @@ class MainActivity : ComponentActivity() {
                     is Viewer.Images -> ImageViewer(v, { vm.viewer = null },
                         share = { Opener.share(this, listOf(it)) }, openExternal = { openExternal(it, choose = true) })
                     is Viewer.Text -> TextViewer(v, { vm.viewer = null },
-                        openExternal = if (v.source === vm.app.local) ({ openExternal(File(v.path), choose = true) }) else null)
+                        openExternal = if (v.source === vm.app.local) ({ openExternal(File(v.path), choose = true) }) else null,
+                        onSaved = { vm.refreshShowing(v.source, app.twinfile.fs.Paths.parent(v.path) ?: "/"); vm.say("已保存") })
                     null -> {}
                 }
                 vm.openRequest?.let { req ->
@@ -186,6 +202,8 @@ class MainActivity : ComponentActivity() {
         if (!choose) {
             val saved = vm.prefs.openers[Opener.defaultKey(f, mime)]?.let { android.content.ComponentName.unflattenFromString(it) }
             if (saved != null && Opener.launch(this, f, mime, saved)) return
+            // No default of our own: let the system pick (its own default, or its chooser).
+            if (Opener.launch(this, f, mime, null)) return
         }
         vm.openRequest = OpenRequest(f, mime)
     }

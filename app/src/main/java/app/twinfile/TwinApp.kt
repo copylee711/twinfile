@@ -45,7 +45,7 @@ class TwinApp : Application() {
         pc = PcManager(this)
     }
 
-    fun source(id: String): FileSource? = sources[id]
+    fun source(id: String): FileSource? = sources[id] ?: pc.lazySource(id)
 
     /** Protected folders through root or Shizuku; null when that is switched off. */
     var priv: ShellSource? = null
@@ -57,6 +57,7 @@ class TwinApp : Application() {
         val shell = when (prefs.privMode) {
             "ROOT" -> RootShell()
             "SHIZUKU" -> ShizukuShell(packageName)
+            "SYNCBOARD" -> app.twinfile.pc.SyncBoardBridge.Shell()
             else -> null
         }
         priv = shell?.let { ShellSource(it) { Volumes.roots(this) } }

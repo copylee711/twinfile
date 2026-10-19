@@ -150,7 +150,10 @@ object PcPairing {
  * The encrypted session (§3) with one paired PC, opened on demand and closed when idle.
  * Requests (§8.1) wait for their `fs.res`; pulls and uploads stream 256 KiB chunks.
  */
-class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (PcInfo) -> Unit, private val onUnpaired: () -> Unit) {
+class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (PcInfo) -> Unit, private val onUnpaired: () -> Unit) : PcTransport {
+    override val sourceId get() = pc.sourceId
+    override val display get() = pc.display
+
     private inner class Session(val sock: Socket, val reader: SecureReader, val writer: SecureWriter) {
         @Volatile var closed = false
         fun send(m: Message) {
@@ -189,9 +192,9 @@ class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (
     @Volatile var online = false
         private set
 
-    fun idleFor(): Long = if (pulls.isEmpty() && pushes.isEmpty()) System.currentTimeMillis() - lastUse else 0
+    override fun idleFor(): Long = if (pulls.isEmpty() && pushes.isEmpty()) System.currentTimeMillis() - lastUse else 0
 
-    fun close() {
+    override fun close() {
         session?.close()
         session = null
         online = false
@@ -334,7 +337,7 @@ class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (
     }
 
     /** An `fs` request; returns the successful `fs.res` or throws its error. */
-    fun request(op: String, args: JSONObject = JSONObject(), timeoutMs: Long = 20_000): Message {
+    override fun request(op: String, args: JSONObject, timeoutMs: Long): Message {
         val s = session()
         val rid = Crypto.randomId()
         val p = Pending()
@@ -353,7 +356,7 @@ class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (
     }
 
     /** Streams a PC file (`pull`). Closing early cancels the transfer. */
-    fun pull(path: String): InputStream {
+    override fun pull(path: String): InputStream {
         val s = session()
         val rid = Crypto.randomId()
         val p = Pull(rid)
@@ -406,7 +409,7 @@ class PcLink(@Volatile var pc: PcInfo, private val me: Me, private val onHost: (
     }
 
     /** Uploads into the PC folder [dir] as [name]; close() returns once the PC confirmed it. */
-    fun push(dir: String, name: String, size: Long): OutputStream {
+    override fun push(dir: String, name: String, size: Long): OutputStream {
         val s = session()
         val id = Crypto.randomId()
         val p = Push(id)

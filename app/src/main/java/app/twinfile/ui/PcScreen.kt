@@ -112,7 +112,9 @@ fun PcScreen(vm: MainViewModel, back: () -> Unit, openIn: (PcInfo) -> Unit) {
         }) { Icon(Icons.Filled.Add, "扫码配对") }
     }) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            if (pcm.pcs.isEmpty()) {
+            androidx.compose.runtime.LaunchedEffect(Unit) { pcm.refreshSyncBoard() }
+            SyncBoardCard(vm)
+            if (pcm.pcs.isEmpty() && pcm.viaSyncBoard.isEmpty()) {
                 Column(Modifier.padding(24.dp)) {
                     Text("还没有配对的电脑", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
@@ -132,7 +134,7 @@ fun PcScreen(vm: MainViewModel, back: () -> Unit, openIn: (PcInfo) -> Unit) {
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(pc.display, fontSize = 15.sp)
-                        val online = pcm.source(pc)?.link?.online == true
+                        val online = (pcm.source(pc)?.link as? app.twinfile.pc.PcLink)?.online == true
                         Text((if (online) "已连接 · " else "") + pc.hosts.firstOrNull().orEmpty(), fontSize = 12.sp, color = LocalTwin.current.muted)
                     }
                     TextButton({ menuFor = pc }) { Text("管理") }
@@ -220,5 +222,54 @@ fun PcScreen(vm: MainViewModel, back: () -> Unit, openIn: (PcInfo) -> Unit) {
     renaming?.let { pc ->
         InputDialog("备注", pc.alias.ifBlank { pc.name }, onDismiss = { renaming = null },
             buttons = listOf("确定" to { n: String -> pcm.rename(pc, n); renaming = null }))
+    }
+}
+
+/**
+ * When the SyncBoard app runs on this phone, its PC connections can be used directly:
+ * no second pairing. Shows the approval step or the PCs it is connected to.
+ */
+@Composable
+private fun SyncBoardCard(vm: MainViewModel) {
+    val pcm = vm.app.pc
+    val twin = LocalTwin.current
+    val state = pcm.syncBoard ?: return
+    if (state == app.twinfile.pc.SyncBoardBridge.State.NOT_INSTALLED) return
+    androidx.compose.material3.Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("通过 SyncBoard", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            when (state) {
+                app.twinfile.pc.SyncBoardBridge.State.NOT_APPROVED -> {
+                    Text("这台手机装了 SyncBoard。允许后可以直接使用它已连接的电脑，不用再配对一次；也能借它访问 Android/data。",
+                        fontSize = 13.sp, color = twin.muted, lineHeight = 19.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Button({ vm.askSyncBoard() }) { Text("在 SyncBoard 里允许") }
+                }
+                app.twinfile.pc.SyncBoardBridge.State.NOT_RUNNING ->
+                    Text("SyncBoard 手机服务没有运行。打开 SyncBoard 启动后，这里会显示它连接的电脑。", fontSize = 13.sp, color = twin.muted)
+                else -> if (pcm.viaSyncBoard.isEmpty()) {
+                    Text("SyncBoard 现在没有连接电脑。", fontSize = 13.sp, color = twin.muted)
+                } else pcm.viaSyncBoard.forEach { (id, name) ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                            vm.openSource(vm.active, app.twinfile.pc.SyncBoardBridge.sourceIdOf(id))
+                            vm.locateTick++ // back to the panes
+                        }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Filled.Computer, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(name, fontSize = 15.sp)
+                            Text("已连接 · 电脑上需开启「允许已配对设备浏览文件」", fontSize = 12.sp, color = twin.muted)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

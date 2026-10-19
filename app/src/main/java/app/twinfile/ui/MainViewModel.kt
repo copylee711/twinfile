@@ -20,6 +20,7 @@ import app.twinfile.ops.Transfer
 import app.twinfile.util.FileLog
 import app.twinfile.update.Updater
 import app.twinfile.priv.RootShell
+import app.twinfile.pc.SyncBoardBridge
 import app.twinfile.priv.ShellSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -196,7 +197,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 rikka.shizuku.Shizuku.addRequestPermissionResultListener(listener)
                 rikka.shizuku.Shizuku.requestPermission(SHIZUKU_REQUEST)
             }
+            "SYNCBOARD" -> viewModelScope.launch {
+                when (withContext(Dispatchers.IO) { SyncBoardBridge.state(app) }) {
+                    SyncBoardBridge.State.READY -> apply()
+                    SyncBoardBridge.State.NOT_APPROVED -> askSyncBoard { ok -> if (ok) setPrivMode(mode) }
+                    SyncBoardBridge.State.NOT_RUNNING -> say("SyncBoard 手机服务没有运行，请先打开 SyncBoard 启动")
+                    SyncBoardBridge.State.NOT_INSTALLED -> say("没有安装 SyncBoard")
+                }
+            }
             else -> apply()
+        }
+    }
+
+    /** Set while SyncBoard's approval dialog should be shown; the activity launches it. */
+    var syncBoardApproval by mutableStateOf<((Boolean) -> Unit)?>(null)
+
+    fun askSyncBoard(then: (Boolean) -> Unit = {}) {
+        syncBoardApproval = { ok ->
+            if (ok) say("已获得 SyncBoard 授权")
+            app.pc.refreshSyncBoard()
+            then(ok)
         }
     }
 

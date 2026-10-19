@@ -257,7 +257,7 @@ private fun ThemePicker(vm: MainViewModel) {
 /** Off / Shizuku / Root, for Android/data, obb and (with root) the whole system. */
 @Composable
 private fun PrivPicker(vm: MainViewModel) {
-    val modes = listOf("OFF" to "关闭", "SHIZUKU" to "Shizuku", "ROOT" to "Root")
+    val modes = listOf("OFF" to "关闭", "SYNCBOARD" to "SyncBoard", "SHIZUKU" to "Shizuku", "ROOT" to "Root")
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         modes.forEachIndexed { i, (m, label) ->
             val on = vm.prefs.privMode == m
@@ -272,13 +272,14 @@ private fun PrivPicker(vm: MainViewModel) {
                     .clickable { if (!on) vm.setPrivMode(m) }.padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, fontSize = 14.sp, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                Text(label, fontSize = 13.sp, maxLines = 1, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
             }
         }
     }
     Text(
-        "Android 11 起，应用无法直接访问 Android/data 和 obb。开启后进入这些文件夹会自动通过 Shizuku（免 Root，需先在 Shizuku 应用里启动服务）" +
-            "或 Root 访问；Root 还能浏览整个系统，抽屉里会多出「根目录 · Root」。",
+        "Android 11 起，应用无法直接访问 Android/data 和 obb。开启后进入这些文件夹会自动改用所选方式：" +
+            "SyncBoard（借用已运行的 SyncBoard 手机服务，第一次需要在 SyncBoard 里允许）、Shizuku（需先启动 Shizuku 服务）或 Root；" +
+            "Root 还能浏览整个系统，抽屉里会多出「根目录 · Root」。",
         Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = LocalTwin.current.muted,
     )
 }

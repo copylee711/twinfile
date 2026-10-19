@@ -12,13 +12,28 @@ import org.json.JSONObject
 import java.io.InputStream
 import java.io.OutputStream
 
+/** How [PcSource] reaches a PC: its own encrypted link, or SyncBoard's through the phone service. */
+interface PcTransport {
+    val sourceId: String
+    val display: String
+    /** An `fs` request; returns the successful `fs.res` or throws its error. */
+    fun request(op: String, args: JSONObject = JSONObject(), timeoutMs: Long = 20_000): app.twinfile.pc.proto.Message
+    /** Streams a PC file. Closing early cancels the transfer. */
+    fun pull(path: String): InputStream
+    /** Uploads into PC folder [dir]; close() returns once the PC has the whole file. */
+    fun push(dir: String, name: String, size: Long): OutputStream
+    /** Milliseconds without traffic, 0 while transferring. */
+    fun idleFor(): Long
+    fun close()
+}
+
 /**
  * A paired PC as a file source. Panes use '/'-separated paths; the PC's are native:
  * "/C:/Users/a" here is "C:\Users\a" there, and "/" lists the drives.
  */
-class PcSource(val link: PcLink) : FileSource {
-    override val id get() = link.pc.sourceId
-    override val title get() = link.pc.display
+class PcSource(val link: PcTransport) : FileSource {
+    override val id get() = link.sourceId
+    override val title get() = link.display
     override val caps = setOf(Cap.SERVER_MOVE, Cap.SERVER_COPY, Cap.THUMB, Cap.MTIME)
 
     @Volatile private var rootsCache: Pair<List<Root>, String>? = null

@@ -124,8 +124,15 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                     DrawerItem(Icons.Filled.Lan, c.display, "${c.type.label} · ${c.host}") { vm.openSource(vm.active, c.sourceId); close() }
                 }
             }
-            if (vm.app.pc.pcs.isNotEmpty()) {
+            if (vm.app.pc.pcs.isNotEmpty() || vm.app.pc.viaSyncBoard.isNotEmpty()) {
                 Section("电脑")
+                vm.app.pc.viaSyncBoard.forEach { (id, name) ->
+                    val sid = app.twinfile.pc.SyncBoardBridge.sourceIdOf(id)
+                    DrawerItem(Icons.Filled.Computer, name, "通过 SyncBoard") { vm.openSource(vm.active, sid); close() }
+                    (vm.app.source(sid) as? app.twinfile.pc.PcSource)?.cachedPlaces()?.forEach { place ->
+                        DrawerItem(Icons.Filled.Folder, "　${place.name}", null) { vm.openBookmark(vm.active, sid, place.path); close() }
+                    }
+                }
                 vm.app.pc.pcs.forEach { pc ->
                     DrawerItem(Icons.Filled.Computer, pc.display, "磁盘与文件夹") { vm.openSource(vm.active, pc.sourceId); close() }
                     vm.app.pc.source(pc)?.cachedPlaces()?.forEach { place ->

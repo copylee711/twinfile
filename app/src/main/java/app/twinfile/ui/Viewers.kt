@@ -5,6 +5,12 @@ import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -166,14 +172,20 @@ private fun decodeFull(source: FileSource, path: String, e: FEntry, maxPx: Int):
 
 private const val TEXT_LIMIT = 1024 * 1024
 
-/** Read-only text preview of the first MiB, UTF-8 or GBK. */
+/** What the text viewer loaded: the text, its lines, the charset label and its line ending. */
+private class TextDoc(val text: String, val lines: List<String>, val charset: String, val crlf: Boolean)
+
+/**
+ * Text preview of the first MiB, UTF-8 or GBK. Files up to that size can be edited in
+ * place and saved back in the same encoding and line endings.
+ */
 @Composable
-fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?) {
-    BackHandler(onBack = close)
+fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?, onSaved: () -> Unit = {}) {
     var wrap by remember { mutableStateOf(true) }
     val isMarkdown = Kinds.of(v.entry) == Kind.MARKDOWN
     var rendered by remember { mutableStateOf(isMarkdown) }
-    val content by produceState<Result<Pair<List<String>, String>>?>(null, v.path) {
+    var reload by remember { mutableIntStateOf(0) }
+    val content by produceState<Result<TextDoc>?>(null, v.path, reload) {
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val bytes = v.source.openRead(v.path).use { input ->
@@ -187,34 +199,100 @@ fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?) {
                     buf.copyOf(n)
                 }
                 val (text, cs) = decodeText(bytes)
-                text.lines().let { if (it.size > 1 && it.last().isEmpty()) it.dropLast(1) else it } to cs
+                val lines = text.lines().let { if (it.size > 1 && it.last().isEmpty()) it.dropLast(1) else it }
+                TextDoc(text, lines, cs, "\r\n" in text)
             }
         }
     }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding()) {
+    val doc = content?.getOrNull()
+    // Editing needs the whole file in memory and a source we can write to.
+    val editable = doc != null && v.entry.size <= TEXT_LIMIT && !v.source.readOnly && doc.charset in setOf("UTF-8", "GBK", "UTF-8 BOM")
+    var editing by remember { mutableStateOf<androidx.compose.ui.text.input.TextFieldValue?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var askSave by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val dirty = editing != null && doc != null && editing!!.text != doc.text.replace("\r\n", "\n")
+
+    fun save(then: () -> Unit) {
+        val d = doc ?: return
+        val text = editing?.text ?: return
+        saving = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val out = if (d.crlf) text.replace("\n", "\r\n") else text
+                    val bytes = when (d.charset) {
+                        "GBK" -> out.toByteArray(Charset.forName("GBK"))
+                        "UTF-8 BOM" -> byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + out.toByteArray(Charsets.UTF_8)
+                        else -> out.toByteArray(Charsets.UTF_8)
+                    }
+                    v.source.openWrite(v.path, bytes.size.toLong()).use { it.write(bytes) }
+                }
+            }
+            saving = false
+            r.onSuccess {
+                editing = null
+                reload++
+                onSaved()
+                then()
+            }.onFailure { error = "保存失败：${it.message ?: it.javaClass.simpleName}" }
+        }
+    }
+
+    BackHandler {
+        when {
+            dirty -> askSave = true
+            editing != null -> editing = null
+            else -> close()
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+            IconButton({ if (dirty) askSave = true else if (editing != null) editing = null else close() }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+            }
             Column(Modifier.weight(1f)) {
-                Text(v.entry.name, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
-                val info = content?.getOrNull()?.let { (lines, cs) ->
-                    "${lines.size} 行 · $cs" + if (v.entry.size > TEXT_LIMIT) " · 只显示前 1 MB" else ""
+                Text((if (dirty) "● " else "") + v.entry.name, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+                val info = doc?.let { d ->
+                    (if (editing != null) "编辑中 · " else "${d.lines.size} 行 · ") + d.charset +
+                        (if (d.crlf) " · CRLF" else "") + if (v.entry.size > TEXT_LIMIT) " · 只显示前 1 MB" else ""
                 } ?: Format.size(v.entry.size)
                 Text(info, fontSize = 12.sp, color = LocalTwin.current.muted)
             }
-            if (isMarkdown) IconButton({ rendered = !rendered }) {
-                Icon(if (rendered) Icons.Filled.Code else Icons.AutoMirrored.Filled.Article, if (rendered) "查看源码" else "预览")
+            if (editing != null) {
+                IconButton({ save {} }, enabled = dirty && !saving) { Icon(Icons.Filled.Save, "保存") }
+            } else {
+                if (isMarkdown) IconButton({ rendered = !rendered }) {
+                    Icon(if (rendered) Icons.Filled.Code else Icons.AutoMirrored.Filled.Article, if (rendered) "查看源码" else "预览")
+                }
+                if (!rendered) IconButton({ wrap = !wrap }) { Icon(Icons.AutoMirrored.Filled.WrapText, "自动换行") }
+                if (editable) IconButton({
+                    editing = androidx.compose.ui.text.input.TextFieldValue(doc!!.text.replace("\r\n", "\n"))
+                }) { Icon(Icons.Filled.Edit, "编辑") }
+                if (openExternal != null) IconButton(openExternal) { Icon(Icons.AutoMirrored.Filled.OpenInNew, "用其他应用打开") }
             }
-            if (!rendered) IconButton({ wrap = !wrap }) { Icon(Icons.AutoMirrored.Filled.WrapText, "自动换行") }
-            if (openExternal != null) IconButton(openExternal) { Icon(Icons.AutoMirrored.Filled.OpenInNew, "用其他应用打开") }
         }
-        when (val r = content) {
-            null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            else -> r.onSuccess { (lines, _) ->
+        error?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        val e = editing
+        when {
+            e != null -> androidx.compose.foundation.text.BasicTextField(
+                e, { editing = it },
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = FontFamily.Monospace, fontSize = 14.sp, lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+            )
+            content == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            else -> content!!.onSuccess { d ->
                 val h = rememberScrollState()
-                if (rendered) MarkdownView(remember(lines) { lines.joinToString("\n") }, Modifier.fillMaxSize())
+                if (rendered) MarkdownView(d.text, Modifier.fillMaxSize())
                 else SelectionContainer {
                     LazyColumn(Modifier.fillMaxSize().then(if (wrap) Modifier else Modifier.horizontalScroll(h)).padding(horizontal = 8.dp)) {
-                        itemsIndexed(lines) { i, line ->
+                        itemsIndexed(d.lines) { i, line ->
                             Row {
                                 Text("${i + 1}", Modifier.padding(end = 8.dp), fontSize = 11.sp, color = LocalTwin.current.muted,
                                     fontFamily = FontFamily.Monospace)
@@ -225,6 +303,21 @@ fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?) {
                 }
             }.onFailure { Text("无法读取：${it.message}", Modifier.padding(16.dp)) }
         }
+    }
+
+    if (askSave) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { askSave = false },
+            title = { Text("保存修改？") },
+            text = { Text(v.entry.name) },
+            confirmButton = { androidx.compose.material3.TextButton({ askSave = false; save { editing = null } }) { Text("保存") } },
+            dismissButton = {
+                Row {
+                    androidx.compose.material3.TextButton({ askSave = false; editing = null }) { Text("不保存") }
+                    androidx.compose.material3.TextButton({ askSave = false }) { Text("继续编辑") }
+                }
+            },
+        )
     }
 }
 
@@ -240,7 +333,7 @@ fun decodeText(bytes: ByteArray): Pair<String, String> {
     if (start == 3) return String(bytes, 3, bytes.size - 3, Charsets.UTF_8) to "UTF-8 BOM"
     strict(Charsets.UTF_8)?.let { return it to "UTF-8" }
     strict(Charset.forName("GBK"))?.let { return it to "GBK" }
-    return String(bytes, Charsets.UTF_8) to "UTF-8"
+    return String(bytes, Charsets.UTF_8) to "UTF-8（有无法识别的字符）"
 }
 
 /** Length without a trailing incomplete UTF-8 sequence. */
