@@ -410,38 +410,24 @@ private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, s
     }
 }
 
-/** A bar button with a small caption, so every action says what it does. */
-@Composable
-private fun LabeledButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val tint = if (enabled) MaterialTheme.colorScheme.onSurface else LocalTwin.current.muted.copy(alpha = 0.4f)
-    Column(
-        Modifier.size(56.dp, 52.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = tint)
-        Text(label, fontSize = 10.sp, color = tint, maxLines = 1)
-    }
-}
-
 @Composable
 private fun SelectionBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit) {
     var more by remember { mutableStateOf(false) }
     val dual = vm.prefs.dualPane
     val otherSame = vm.other.source === pane.source && vm.other.path == pane.path
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         // Two panes: straight to the other one. One pane: onto the clipboard, paste anywhere.
         if (dual) {
-            LabeledButton(Icons.Filled.ContentCopy, "复制", !otherSame) { vm.transfer(pane, pane.selectedEntries(), move = false) }
-            LabeledButton(Icons.AutoMirrored.Filled.DriveFileMove, "移动", !otherSame) { vm.transfer(pane, pane.selectedEntries(), move = true) }
+            BarButton(Icons.Filled.ContentCopy, "复制", !otherSame) { vm.transfer(pane, pane.selectedEntries(), move = false) }
+            BarButton(Icons.AutoMirrored.Filled.DriveFileMove, "移动", !otherSame) { vm.transfer(pane, pane.selectedEntries(), move = true) }
         } else {
-            LabeledButton(Icons.Filled.ContentCopy, "复制") { vm.toClip(pane, pane.selectedEntries(), move = false) }
-            LabeledButton(Icons.Filled.ContentCut, "剪切") { vm.toClip(pane, pane.selectedEntries(), move = true) }
+            BarButton(Icons.Filled.ContentCopy, "复制") { vm.toClip(pane, pane.selectedEntries(), move = false) }
+            BarButton(Icons.Filled.ContentCut, "剪切") { vm.toClip(pane, pane.selectedEntries(), move = true) }
         }
-        LabeledButton(Icons.Filled.Delete, "删除") { show(Dlg.Delete(pane, pane.selectedEntries())) }
-        LabeledButton(Icons.Filled.Bolt, "更多操作") { show(Dlg.Menu(pane, pane.selectedEntries())) }
+        BarButton(Icons.Filled.Delete, "删除") { show(Dlg.Delete(pane, pane.selectedEntries())) }
+        BarButton(Icons.Filled.Bolt, "更多操作") { show(Dlg.Menu(pane, pane.selectedEntries())) }
         Box {
-            LabeledButton(Icons.Filled.SelectAll, "选择") { more = true }
+            BarButton(Icons.Filled.SelectAll, "选择") { more = true }
             DropdownMenu(more, { more = false }) {
                 DropdownMenuItem({ Text("全选") }, { more = false; vm.selectAll(pane) })
                 DropdownMenuItem({ Text("反选") }, { more = false; vm.invert(pane) })
@@ -454,7 +440,7 @@ private fun SelectionBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit
                 DropdownMenuItem({ Text("按关键词选择…") }, { more = false; show(Dlg.Keyword(pane)) })
             }
         }
-        LabeledButton(Icons.Filled.Close, "取消") { vm.clearSelection(pane) }
+        BarButton(Icons.Filled.Close, "取消") { vm.clearSelection(pane) }
     }
 }
 
