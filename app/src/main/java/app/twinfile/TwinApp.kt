@@ -1,0 +1,60 @@
+package app.twinfile
+
+import android.app.Application
+import android.system.Os
+import app.twinfile.fs.FileSource
+import app.twinfile.fs.LocalSource
+import app.twinfile.fs.Volumes
+import app.twinfile.ops.Ops
+import app.twinfile.ops.Trash
+import app.twinfile.util.FileLog
+import java.io.File
+
+class TwinApp : Application() {
+    lateinit var prefs: Prefs
+        private set
+    lateinit var local: LocalSource
+        private set
+    lateinit var trash: Trash
+        private set
+
+    /** Every source a pane can show, by [FileSource.id]. Network and PC sources register here. */
+    val sources = LinkedHashMap<String, FileSource>()
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        FileLog.init(filesDir)
+        FileLog.i("start ${BuildConfigInfo.version(this)}")
+        Ops.init(this)
+        prefs = Prefs(filesDir)
+        local = LocalSource({ Volumes.roots(this) }, ::modeString)
+        sources[local.id] = local
+        trash = Trash { path -> Volumes.of(this, path)?.path }
+    }
+
+    fun source(id: String): FileSource? = sources[id]
+
+    private fun modeString(f: File): String? = try {
+        val m = Os.lstat(f.path).st_mode
+        val chars = "rwxrwxrwx"
+        val s = StringBuilder()
+        for (i in 0 until 9) s.append(if (m and (1 shl (8 - i)) != 0) chars[i] else '-')
+        "$s (${"%o".format(m and 0x1ff)})"
+    } catch (_: Exception) {
+        null
+    }
+
+    companion object {
+        lateinit var instance: TwinApp
+            private set
+    }
+}
+
+object BuildConfigInfo {
+    fun version(app: Application): String = try {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "?"
+    } catch (_: Exception) {
+        "?"
+    }
+}
