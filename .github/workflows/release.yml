@@ -1,0 +1,108 @@
+# Builds the release-signed APK and publishes it with SHA256SUMS.txt.
+#
+# Release: bump versionName/versionCode in app/build.gradle.kts, write the notes to
+# docs/releases/vX.Y.Z.md, commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+#
+# Run it by hand (Actions → Release → Run workflow) to build without publishing; the files
+# are attached to the run as an artifact.
+#
+# Secrets: ANDROID_KEYSTORE_BASE64 (the .jks, base64), ANDROID_STORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: v
+        name: Check the version
+        shell: bash
+        run: |
+          v=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo "versionName $v"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$v" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match versionName $v"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signing key
+        shell: bash
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          dir="$RUNNER_TEMP/signing"
+          mkdir -p "$dir"
+          echo "$KEYSTORE" | base64 -d > "$dir/release.jks"
+          {
+            echo "storeFile=$dir/release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > "$dir/keystore.properties"
+          echo "TWINFILE_SIGNING=$dir/keystore.properties" >> "$GITHUB_ENV"
+
+      - name: Build and test
+        shell: bash
+        env:
+          TWINFILE_REQUIRE_SIGNING: "1"
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease :app:testDebugUnitTest
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/TwinFile-${{ steps.v.outputs.version }}.apk"
+
+      - name: Check the signing certificate
+        shell: bash
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs out/*.apk | tee certs.txt
+          grep -q "CN=TwinFile" certs.txt || { echo "::error::APK is not signed with the TwinFile release key"; exit 1; }
+
+      - name: Checksums
+        shell: bash
+        working-directory: out
+        # "<hash>  <name>", no "*" before names.
+        run: |
+          sha256sum TwinFile-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.v.outputs.version }}
+          path: out/*
+
+      - name: Publish
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          notes="docs/releases/$tag.md"
+          if [ -f "$notes" ]; then args=(--notes-file "$notes"); else args=(--generate-notes); fi
+          gh release create "$tag" --title "$tag" "${args[@]}" out/*
