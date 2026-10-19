@@ -41,13 +41,19 @@ import app.twinfile.ops.Ops
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_LOCATE = "app.twinfile.LOCATE"
+    }
+
     private val vm: MainViewModel by viewModels()
     private var granted by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        preferHighRefreshRate()
         granted = hasStorage()
+        handleLocate(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
@@ -64,8 +70,23 @@ class MainActivity : ComponentActivity() {
             TwinTheme(Palette.of(prefs.palette), DarkMode.of(prefs.darkMode)) {
                 if (!granted) PermissionScreen(::requestStorage)
                 else AppNav()
+                vm.update?.let { UpdateDialog(vm, it) }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLocate(intent)
+    }
+
+    /** From [LocateActivity]: show the file selected in the active pane. */
+    private fun handleLocate(intent: Intent?) {
+        val path = intent?.getStringExtra(EXTRA_LOCATE) ?: return
+        intent.removeExtra(EXTRA_LOCATE)
+        vm.viewer = null
+        vm.locateTick++
+        vm.openBookmark(vm.active, "local", path, isDir = File(path).isDirectory)
     }
 
     override fun onResume() {
@@ -82,6 +103,21 @@ class MainActivity : ComponentActivity() {
             granted = true
             vm.refreshAll()
         }
+    }
+
+    /**
+     * Some ROMs (OriginOS among them) keep apps at 60 Hz unless the window asks for more.
+     * Request the fastest mode that keeps the current resolution.
+     */
+    private fun preferHighRefreshRate() {
+        @Suppress("DEPRECATION")
+        val display = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay) ?: return
+        val current = display.mode
+        val best = display.supportedModes
+            .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+            .maxByOrNull { it.refreshRate } ?: return
+        if (best.refreshRate <= current.refreshRate + 1f && best.modeId == current.modeId) return
+        window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
     }
 
     private fun hasStorage(): Boolean =
@@ -104,16 +140,21 @@ class MainActivity : ComponentActivity() {
     private fun AppNav() {
         var screen by rememberSaveable { mutableStateOf(Screen.MAIN) }
         BackHandler(screen != Screen.MAIN) { screen = Screen.MAIN }
+        androidx.compose.runtime.LaunchedEffect(vm.locateTick) { if (vm.locateTick > 0) screen = Screen.MAIN }
         val back = { screen = Screen.MAIN }
         when (screen) {
             Screen.MAIN -> {
                 MainScreen(vm, { screen = it }, ::openFile, actions)
                 when (val v = vm.viewer) {
                     is Viewer.Images -> ImageViewer(v, { vm.viewer = null },
-                        share = { Opener.share(this, listOf(it)) }, openExternal = { Opener.open(this, it) })
+                        share = { Opener.share(this, listOf(it)) }, openExternal = { openExternal(it, choose = true) })
                     is Viewer.Text -> TextViewer(v, { vm.viewer = null },
-                        openExternal = if (v.source === vm.app.local) ({ Opener.open(this, File(v.path), "text/plain") }) else null)
+                        openExternal = if (v.source === vm.app.local) ({ openExternal(File(v.path), choose = true) }) else null)
                     null -> {}
+                }
+                vm.openRequest?.let { req ->
+                    OpenWithDialog(req, setDefault = { k, c -> vm.prefs.update { openers[k] = c.flattenToString() } },
+                        close = { vm.openRequest = null })
                 }
             }
             Screen.TRASH -> TrashScreen(vm, back)
@@ -136,12 +177,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(pane: PaneState, e: FEntry) {
-        vm.openFile(pane, e) { f -> if (!Opener.open(this, f)) vm.say("没有可以打开此文件的应用") }
+        vm.openFile(pane, e) { f -> openExternal(f, choose = false) }
+    }
+
+    /** Opens [f] with its remembered default app, or asks with the 打开方式 dialog. */
+    private fun openExternal(f: File, choose: Boolean) {
+        val mime = Opener.mime(f.name)
+        if (!choose) {
+            val saved = vm.prefs.openers[Opener.defaultKey(f, mime)]?.let { android.content.ComponentName.unflattenFromString(it) }
+            if (saved != null && Opener.launch(this, f, mime, saved)) return
+        }
+        vm.openRequest = OpenRequest(f, mime)
     }
 
     private val actions = object : FileActions {
         override fun openWith(pane: PaneState, e: FEntry) {
-            vm.withLocalCopy(pane, e) { f -> if (!Opener.open(this@MainActivity, f, "*/*")) vm.say("没有可用的应用") }
+            vm.withLocalCopy(pane, e) { f -> openExternal(f, choose = true) }
         }
 
         override fun share(pane: PaneState, entries: List<FEntry>) {

@@ -27,6 +27,12 @@ class Prefs(dir: File) {
     var compact by mutableStateOf(false)
     /** Slide the list in when entering or leaving a folder. */
     var animateNav by mutableStateOf(true)
+    /** Bookmarks section in the drawer expanded. */
+    var drawerBookmarks by mutableStateOf(true)
+    /** Look for a new release on GitHub at startup. */
+    var autoUpdate by mutableStateOf(true)
+    /** OFF, SHIZUKU or ROOT: how to reach Android/data and other protected folders. */
+    var privMode by mutableStateOf("OFF")
     var trashEnabled by mutableStateOf(true)
     var trashByDefault by mutableStateOf(true)
     var trashAutoCleanDays by mutableStateOf(30)
@@ -38,6 +44,8 @@ class Prefs(dir: File) {
     /** Per-folder sort overrides, keyed by "source:path". */
     val folderSort = HashMap<String, SortSpec>()
     val bookmarks = mutableStateListOf<Bookmark>()
+    /** Default app per file extension (or MIME type), as flattened ComponentNames. */
+    val openers = androidx.compose.runtime.mutableStateMapOf<String, String>()
     val recent = mutableStateListOf<Recent>()
 
     init {
@@ -48,6 +56,9 @@ class Prefs(dir: File) {
         showHidden = j.optBoolean("showHidden", false)
         compact = j.optBoolean("compact", false)
         animateNav = j.optBoolean("animateNav", true)
+        drawerBookmarks = j.optBoolean("drawerBookmarks", true)
+        autoUpdate = j.optBoolean("autoUpdate", true)
+        privMode = j.optString("privMode", "OFF")
         trashEnabled = j.optBoolean("trashEnabled", true)
         trashByDefault = j.optBoolean("trashByDefault", true)
         trashAutoCleanDays = j.optInt("trashAutoCleanDays", 30)
@@ -57,6 +68,7 @@ class Prefs(dir: File) {
         sortLeft = sortOf(j.optJSONObject("sortLeft"))
         sortRight = sortOf(j.optJSONObject("sortRight"))
         j.optJSONObject("folderSort")?.let { o -> o.keys().forEach { k -> folderSort[k] = sortOf(o.optJSONObject(k)) } }
+        j.optJSONObject("openers")?.let { o -> o.keys().forEach { k -> openers[k] = o.optString(k) } }
         j.optJSONArray("bookmarks")?.forEachObj {
             bookmarks += Bookmark(it.optString("name"), it.optString("source", "local"), it.optString("path"))
         }
@@ -74,11 +86,13 @@ class Prefs(dir: File) {
     private fun snapshot(): JSONObject {
         return JSONObject()
             .put("dualPane", dualPane).put("palette", palette).put("darkMode", darkMode).put("showHidden", showHidden).put("compact", compact).put("animateNav", animateNav)
+            .put("drawerBookmarks", drawerBookmarks).put("autoUpdate", autoUpdate).put("privMode", privMode)
             .put("trashEnabled", trashEnabled).put("trashByDefault", trashByDefault)
             .put("trashAutoCleanDays", trashAutoCleanDays).put("keepMtime", keepMtime)
             .put("homeLeft", homeLeft).put("homeRight", homeRight)
             .put("sortLeft", sortJson(sortLeft)).put("sortRight", sortJson(sortRight))
             .put("folderSort", JSONObject().also { o -> folderSort.forEach { (k, v) -> o.put(k, sortJson(v)) } })
+            .put("openers", JSONObject().also { o -> openers.forEach { (k, v) -> o.put(k, v) } })
             .put("bookmarks", JSONArray().also { a ->
                 bookmarks.forEach { a.put(JSONObject().put("name", it.name).put("source", it.source).put("path", it.path)) }
             })

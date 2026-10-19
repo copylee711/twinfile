@@ -30,6 +30,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -169,6 +171,8 @@ private const val TEXT_LIMIT = 1024 * 1024
 fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?) {
     BackHandler(onBack = close)
     var wrap by remember { mutableStateOf(true) }
+    val isMarkdown = Kinds.of(v.entry) == Kind.MARKDOWN
+    var rendered by remember { mutableStateOf(isMarkdown) }
     val content by produceState<Result<Pair<List<String>, String>>?>(null, v.path) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -197,14 +201,18 @@ fun TextViewer(v: Viewer.Text, close: () -> Unit, openExternal: (() -> Unit)?) {
                 } ?: Format.size(v.entry.size)
                 Text(info, fontSize = 12.sp, color = LocalTwin.current.muted)
             }
-            IconButton({ wrap = !wrap }) { Icon(Icons.AutoMirrored.Filled.WrapText, "自动换行") }
+            if (isMarkdown) IconButton({ rendered = !rendered }) {
+                Icon(if (rendered) Icons.Filled.Code else Icons.AutoMirrored.Filled.Article, if (rendered) "查看源码" else "预览")
+            }
+            if (!rendered) IconButton({ wrap = !wrap }) { Icon(Icons.AutoMirrored.Filled.WrapText, "自动换行") }
             if (openExternal != null) IconButton(openExternal) { Icon(Icons.AutoMirrored.Filled.OpenInNew, "用其他应用打开") }
         }
         when (val r = content) {
             null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else -> r.onSuccess { (lines, _) ->
                 val h = rememberScrollState()
-                SelectionContainer {
+                if (rendered) MarkdownView(remember(lines) { lines.joinToString("\n") }, Modifier.fillMaxSize())
+                else SelectionContainer {
                     LazyColumn(Modifier.fillMaxSize().then(if (wrap) Modifier else Modifier.horizontalScroll(h)).padding(horizontal = 8.dp)) {
                         itemsIndexed(lines) { i, line ->
                             Row {

@@ -37,6 +37,14 @@ class PaneState(val index: Int, source: FileSource, private val showHidden: () -
     /** +1 when the last navigation went deeper, -1 when it went up or back. */
     var navDir = 1
     internal var pendingDir = 1
+    /** Entry to scroll into view once the next listing lands. */
+    internal var reveal: String? = null
+    /** Entry that briefly lights up (located from outside, or the folder just left). */
+    var flash by mutableStateOf<String?>(null)
+    var flashTick by mutableIntStateOf(0)
+    /** Row being dragged sideways to start selecting, and how far (px); it follows the finger. */
+    var swipeKey by mutableStateOf<String?>(null)
+    var swipeOffset by mutableStateOf(0f)
 
     val loc get() = Loc(source.id, path)
     val canBack get() = historyVersion >= 0 && back.isNotEmpty()

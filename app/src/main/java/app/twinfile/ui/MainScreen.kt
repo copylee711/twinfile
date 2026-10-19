@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -32,6 +36,10 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.ControlPointDuplicate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
@@ -154,11 +162,12 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
                         }
                     }
                 } else {
-                    PaneSwitcher(vm)
+                    // One pane: whichever had focus when switching; the other is simply not shown.
                     PaneView(vm, active, true, onLong(active), { openFile(active, it) },
-                        Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp))
+                        Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), showHeader = false)
                 }
                 OpsPanel()
+                vm.clip?.let { c -> if (!active.selecting) PasteBar(vm, c, active) }
                 if (active.selecting) SelectionBar(vm, active, show = { dlg = it })
                 else BottomBar(vm, active, show = { dlg = it }, sheet = sheet)
             }
@@ -235,13 +244,19 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
             val otherSame = vm.other.source === p.source && vm.other.path == p.path
             val isLocal = p.source === vm.app.local
             val actions = buildList {
-                add(MenuAction("复制 →", Icons.Filled.ContentCopy, !otherSame || !vm.prefs.dualPane) { vm.transfer(p, es, move = false) })
-                add(MenuAction("移动 →", Icons.AutoMirrored.Filled.DriveFileMove, !otherSame) { vm.transfer(p, es, move = true) })
+                if (vm.prefs.dualPane) {
+                    add(MenuAction("复制 →", Icons.Filled.ContentCopy, !otherSame) { vm.transfer(p, es, move = false) })
+                    add(MenuAction("移动 →", Icons.AutoMirrored.Filled.DriveFileMove, !otherSame) { vm.transfer(p, es, move = true) })
+                } else {
+                    // One pane: pick up the files, then paste them wherever the user goes.
+                    add(MenuAction("复制", Icons.Filled.ContentCopy) { vm.toClip(p, es, move = false) })
+                    add(MenuAction("剪切", Icons.Filled.ContentCut) { vm.toClip(p, es, move = true) })
+                }
                 add(MenuAction("删除", Icons.Filled.Delete) { show(Dlg.Delete(p, es)) })
                 add(MenuAction("重命名", Icons.Filled.DriveFileRenameOutline, single != null) { show(Dlg.Rename(p, single!!)) })
                 add(MenuAction("创建副本", Icons.Filled.ControlPointDuplicate) { vm.transfer(p, es, move = false, toSamePane = true) })
                 if (single != null && !single.isDir && Paths.extension(single.name) in setOf("zip", "apks", "jar")) {
-                    add(MenuAction("解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
+                    if (vm.prefs.dualPane) add(MenuAction("解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
                     add(MenuAction("解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
                 }
                 add(MenuAction("压缩", Icons.Filled.Archive, isLocal) { show(Dlg.Compress(p, es)) })
@@ -269,17 +284,15 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     val usage by produceState<Pair<Long, Long>?>(null, pane.path, pane.source, vm.storageVersion) {
-        value = if (pane.source === vm.app.local) withContext(Dispatchers.IO) {
+        value = if (pane.source.phonePaths) withContext(Dispatchers.IO) {
             Volumes.of(context, pane.path)?.let { (it.total - it.free) to it.total }
                 ?: (Volumes.total(pane.path) - Volumes.free(pane.path) to Volumes.total(pane.path))
         } else null
     }
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onMenu) { Icon(Icons.Filled.Menu, "菜单") }
-        Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { show(Dlg.Jump(pane)) }.padding(horizontal = 4.dp, vertical = 2.dp)) {
-            val prefix = if (pane.source === vm.app.local) "" else pane.source.title + " · "
-            Text(prefix + pane.path, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                overflow = TextOverflow.StartEllipsis)
+        Column(Modifier.weight(1f).padding(vertical = 2.dp)) {
+            Breadcrumb(vm, pane, onLong = { show(Dlg.Jump(pane)) })
             val dirs = pane.visible.count { it.isDir }
             val files = pane.visible.size - dirs
             val parts = buildList {
@@ -288,7 +301,7 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
                 if (pane.selecting) add("已选 ${pane.selected.size}")
                 usage?.let { (u, t) -> if (t > 0) add("${Format.size(u)} / ${Format.size(t)}") }
             }
-            Text(parts.joinToString(" · "), fontSize = 12.sp, color = twin.muted, maxLines = 1)
+            Text(parts.joinToString(" · "), Modifier.padding(start = 6.dp), fontSize = 12.sp, color = twin.muted, maxLines = 1)
         }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "更多") }
@@ -303,7 +316,7 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
                 item(if (vm.prefs.showHidden) "不显示隐藏文件" else "显示隐藏文件") { vm.prefs.update { showHidden = !showHidden } }()
                 item("添加书签") { vm.addBookmark(pane) }()
                 item("设为首页") { vm.setHome(pane) }()
-                item("交换窗口") { vm.swapPanes() }()
+                if (vm.prefs.dualPane) item("交换窗口") { vm.swapPanes() }()
                 item(if (vm.prefs.dualPane) "切换为单栏" else "切换为双栏") { vm.prefs.update { dualPane = !dualPane } }()
                 HorizontalDivider()
                 item("设置") { navigate(Screen.SETTINGS) }()
@@ -312,19 +325,53 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
     }
 }
 
+/** The folder path as tappable segments; long press types a path instead. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PaneSwitcher(vm: MainViewModel) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        vm.panes.forEach { p ->
-            val on = vm.focus == p.index
-            Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                    .background(if (on) MaterialTheme.colorScheme.secondaryContainer else LocalTwin.current.pane)
-                    .clickable { vm.focus = p.index }.padding(6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("${if (p.index == 0) "左" else "右"} · ${Paths.name(p.path)}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun Breadcrumb(vm: MainViewModel, pane: PaneState, onLong: () -> Unit) {
+    val twin = LocalTwin.current
+    val crumbs = vm.crumbs(pane)
+    val state = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    // Keep the current folder in view.
+    LaunchedEffect(pane.path, pane.source) { state.scrollToItem(crumbs.lastIndex) }
+    LazyRow(state = state, verticalAlignment = Alignment.CenterVertically) {
+        itemsIndexed(crumbs, key = { _, c -> c.second }) { i, (label, path) ->
+            val last = i == crumbs.lastIndex
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (i > 0) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(16.dp), tint = twin.muted)
+                Text(
+                    label,
+                    Modifier.clip(RoundedCornerShape(6.dp))
+                        .combinedClickable(onLongClick = onLong) {
+                            if (!last) vm.open(pane, path)
+                            else scope.launch { pane.listState.animateScrollToItem(0) } // current folder: back to top
+                        }
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    fontSize = if (last) 16.sp else 14.sp,
+                    fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (last) MaterialTheme.colorScheme.onSurface else twin.muted,
+                    maxLines = 1,
+                )
             }
+        }
+    }
+}
+
+/** Shown while files wait on the clipboard: paste them into the current folder. */
+@Composable
+private fun PasteBar(vm: MainViewModel, c: MainViewModel.Clip, pane: PaneState) {
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer) {
+        Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                val what = c.entries.singleOrNull()?.name ?: "${c.entries.size} 项"
+                Text("${if (c.move) "已剪切" else "已复制"} $what", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+                Text("来自 ${Paths.name(c.dir)}", fontSize = 12.sp, color = LocalTwin.current.muted, maxLines = 1)
+            }
+            TextButton({ vm.clip = null }) { Text("取消") }
+            TextButton({ vm.paste(pane) }, enabled = !pane.source.readOnly) { Text("粘贴到这里") }
         }
     }
 }
@@ -357,7 +404,8 @@ private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, s
             BarButton(Icons.AutoMirrored.Filled.ArrowBack, "后退", pane.canBack) { vm.back(pane) }
             BarButton(Icons.AutoMirrored.Filled.ArrowForward, "前进", pane.canForward) { vm.forward(pane) }
             BarButton(Icons.Filled.Add, "新建") { show(Dlg.NewItem(pane)) }
-            BarButton(Icons.Filled.SwapHoriz, "同步到另一栏（长按交换）", onLong = { vm.swapPanes() }) { vm.syncOther() }
+            if (vm.prefs.dualPane) BarButton(Icons.Filled.SwapHoriz, "同步到另一栏（长按交换）", onLong = { vm.swapPanes() }) { vm.syncOther() }
+            else BarButton(Icons.Filled.Refresh, "刷新") { vm.refresh(pane) }
             BarButton(Icons.Filled.ArrowUpward, "上一级", vm.canGoUp(pane)) { vm.up(pane) }
         }
     }

@@ -10,6 +10,9 @@ import app.twinfile.pc.PcManager
 import app.twinfile.ops.Ops
 import app.twinfile.ops.Trash
 import app.twinfile.util.FileLog
+import app.twinfile.priv.RootShell
+import app.twinfile.priv.ShellSource
+import app.twinfile.priv.ShizukuShell
 import java.io.File
 
 class TwinApp : Application() {
@@ -37,11 +40,28 @@ class TwinApp : Application() {
         local = LocalSource({ Volumes.roots(this) }, ::modeString)
         sources[local.id] = local
         trash = Trash { path -> Volumes.of(this, path)?.path }
+        applyPrivMode()
         net = NetManager(this)
         pc = PcManager(this)
     }
 
     fun source(id: String): FileSource? = sources[id]
+
+    /** Protected folders through root or Shizuku; null when that is switched off. */
+    var priv: ShellSource? = null
+        private set
+
+    /** (Re)creates [priv] for [Prefs.privMode]. */
+    fun applyPrivMode() {
+        priv?.close()
+        val shell = when (prefs.privMode) {
+            "ROOT" -> RootShell()
+            "SHIZUKU" -> ShizukuShell(packageName)
+            else -> null
+        }
+        priv = shell?.let { ShellSource(it) { Volumes.roots(this) } }
+        priv?.let { sources[it.id] = it } ?: sources.remove(ShellSource.ID)
+    }
 
     private fun modeString(f: File): String? = try {
         val m = Os.lstat(f.path).st_mode

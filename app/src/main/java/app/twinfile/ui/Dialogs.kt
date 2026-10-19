@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -366,3 +368,43 @@ data class MenuAction(
     val enabled: Boolean = true,
     val run: () -> Unit,
 )
+
+/** A newer release from GitHub: update now, later, or stop checking. */
+@Composable
+fun UpdateDialog(vm: MainViewModel, r: app.twinfile.update.Updater.Release) {
+    val progress = vm.updateProgress
+    AlertDialog(
+        onDismissRequest = { if (progress == null) vm.update = null },
+        title = {
+            Column {
+                Text("发现新版本 v${r.version}")
+                Text("当前 v${app.twinfile.update.Updater.current} · 安装包 ${Format.size(r.apkSize)}", fontSize = 13.sp,
+                    color = LocalTwin.current.muted)
+            }
+        },
+        text = {
+            Column {
+                if (r.notes.isNotBlank()) {
+                    Box(Modifier.heightIn(max = 300.dp)) { MarkdownView(r.notes) }
+                }
+                if (progress != null) {
+                    androidx.compose.material3.LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 12.dp))
+                    Text("正在下载 ${(progress * 100).toInt()}%", fontSize = 12.sp, color = LocalTwin.current.muted,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        },
+        confirmButton = {
+            if (progress == null) TextButton({ vm.downloadUpdate(r) }) { Text("更新") }
+            else TextButton({ vm.cancelUpdate() }) { Text("取消下载") }
+        },
+        dismissButton = {
+            if (progress == null) Row {
+                TextButton({ vm.prefs.update { autoUpdate = false }; vm.update = null; vm.say("已关闭自动检查更新，可在设置里重新打开") }) {
+                    Text("不再检查")
+                }
+                TextButton({ vm.update = null }) { Text("以后再说") }
+            }
+        },
+    )
+}

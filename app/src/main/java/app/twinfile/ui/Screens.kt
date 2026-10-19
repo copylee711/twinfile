@@ -160,6 +160,10 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
             Toggle("文件夹切换动画", "进入、返回文件夹时列表滑入", p.animateNav) { p.update { animateNav = it } }
             Toggle("显示隐藏文件", "以 . 开头的文件和文件夹", p.showHidden) { p.update { showHidden = it } }
             Group("文件操作")
+            Item("默认打开方式", if (p.openers.isEmpty()) "未设置；打开文件时勾选「始终用此应用打开」"
+                else "已为 ${p.openers.size} 种类型设置（${p.openers.keys.take(6).joinToString(" ")}）· 点按全部清除") {
+                p.update { openers.clear() }
+            }
             Toggle("保留修改时间", "复制、解压时保持原文件的修改时间", p.keepMtime) { p.update { keepMtime = it } }
             Group("回收站")
             Toggle("启用回收站", "删除本地文件时可以先移到回收站", p.trashEnabled) { p.update { trashEnabled = it } }
@@ -170,6 +174,13 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
             Item("右窗口首页", p.homeRight.ifEmpty { "内部存储" }) { p.update { homeRight = "" } }
             Text("在主界面菜单里点「设为首页」修改；点这里恢复为内部存储。", Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 fontSize = 12.sp, color = LocalTwin.current.muted)
+            Group("高级访问")
+            PrivPicker(vm)
+            Group("更新")
+            Toggle("启动时检查更新", "有新版本时提示，可以选择更新或以后再说", p.autoUpdate) { p.update { autoUpdate = it } }
+            val context = androidx.compose.ui.platform.LocalContext.current
+            Item("检查更新", "当前版本 v${app.twinfile.update.Updater.current}") { vm.checkUpdate(manual = true) }
+            Item("GitHub 发布页", app.twinfile.update.Updater.RELEASES_PAGE) { app.twinfile.update.Updater.openPage(context) }
             Group("关于")
             Item("TwinFile", "开源免费的双栏文件管理器 · MIT 许可") {}
         }
@@ -241,6 +252,35 @@ private fun ThemePicker(vm: MainViewModel) {
             }
         }
     }
+}
+
+/** Off / Shizuku / Root, for Android/data, obb and (with root) the whole system. */
+@Composable
+private fun PrivPicker(vm: MainViewModel) {
+    val modes = listOf("OFF" to "关闭", "SHIZUKU" to "Shizuku", "ROOT" to "Root")
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        modes.forEachIndexed { i, (m, label) ->
+            val on = vm.prefs.privMode == m
+            val shape = when (i) {
+                0 -> RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)
+                modes.size - 1 -> RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
+                else -> RoundedCornerShape(0.dp)
+            }
+            Box(
+                Modifier.weight(1f).clip(shape)
+                    .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable { if (!on) vm.setPrivMode(m) }.padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, fontSize = 14.sp, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    }
+    Text(
+        "Android 11 起，应用无法直接访问 Android/data 和 obb。开启后进入这些文件夹会自动通过 Shizuku（免 Root，需先在 Shizuku 应用里启动服务）" +
+            "或 Root 访问；Root 还能浏览整个系统，抽屉里会多出「根目录 · Root」。",
+        Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = LocalTwin.current.muted,
+    )
 }
 
 @Composable

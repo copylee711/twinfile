@@ -17,6 +17,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.TextSnippet
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
@@ -24,6 +32,8 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.SubdirectoryArrowLeft
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -50,16 +60,28 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class Kind { FOLDER, IMAGE, VIDEO, AUDIO, ARCHIVE, APK, TEXT, OTHER }
+enum class Kind {
+    FOLDER, IMAGE, VIDEO, AUDIO, ARCHIVE, APK, PDF, DOC, SHEET, SLIDE, EBOOK, MARKDOWN, CODE, SCRIPT, TEXT, OTHER;
+
+    /** Opens in the built-in text viewer. */
+    val textual get() = this == TEXT || this == CODE || this == SCRIPT || this == MARKDOWN
+}
 
 object Kinds {
-    private val image = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif")
-    private val video = setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "flv", "ts", "m4v", "wmv")
-    private val audio = setOf("mp3", "flac", "wav", "ogg", "m4a", "aac", "opus", "wma", "amr", "ape")
-    private val archive = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "apks", "xapk", "zst")
-    private val text = setOf("txt", "md", "log", "json", "xml", "html", "htm", "css", "js", "ts", "kt", "java",
-        "c", "h", "cpp", "py", "sh", "ini", "conf", "cfg", "yaml", "yml", "toml", "csv", "properties", "gradle",
-        "rs", "go", "smali", "srt", "ass", "lrc", "bat", "ps1", "sql")
+    private val image = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "ico")
+    private val video = setOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "flv", "ts", "m4v", "wmv", "rmvb")
+    private val audio = setOf("mp3", "flac", "wav", "ogg", "m4a", "aac", "opus", "wma", "amr", "ape", "mid")
+    private val archive = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "apks", "xapk", "zst", "jar", "tgz", "iso")
+    private val doc = setOf("doc", "docx", "odt", "rtf", "wps", "pages")
+    private val sheet = setOf("xls", "xlsx", "ods", "et", "numbers")
+    private val slide = setOf("ppt", "pptx", "odp", "dps", "key")
+    private val ebook = setOf("epub", "mobi", "azw3", "fb2", "djvu")
+    private val code = setOf("kt", "kts", "java", "c", "h", "cpp", "hpp", "cc", "cs", "py", "js", "mjs", "jsx", "tsx",
+        "rs", "go", "lua", "php", "rb", "swift", "dart", "vue", "html", "htm", "css", "scss", "xml", "json", "gradle",
+        "smali", "sql")
+    private val script = setOf("sh", "bash", "zsh", "bat", "cmd", "ps1")
+    private val text = setOf("txt", "log", "ini", "conf", "cfg", "yaml", "yml", "toml", "csv", "tsv", "properties",
+        "srt", "ass", "lrc", "nfo", "prop", "rc", "gitignore")
 
     fun of(e: FEntry): Kind = if (e.isDir) Kind.FOLDER else of(e.name)
 
@@ -69,6 +91,14 @@ object Kinds {
         in audio -> Kind.AUDIO
         "apk" -> Kind.APK
         in archive -> Kind.ARCHIVE
+        "pdf" -> Kind.PDF
+        in doc -> Kind.DOC
+        in sheet -> Kind.SHEET
+        in slide -> Kind.SLIDE
+        in ebook -> Kind.EBOOK
+        "md", "markdown" -> Kind.MARKDOWN
+        in code -> Kind.CODE
+        in script -> Kind.SCRIPT
         in text -> Kind.TEXT
         else -> Kind.OTHER
     }
@@ -145,6 +175,14 @@ fun kindIcon(kind: Kind): ImageVector = when (kind) {
     Kind.AUDIO -> Icons.Filled.Audiotrack
     Kind.ARCHIVE -> Icons.Filled.FolderZip
     Kind.APK -> Icons.Filled.Android
+    Kind.PDF -> Icons.Filled.PictureAsPdf
+    Kind.DOC -> Icons.Filled.Description
+    Kind.SHEET -> Icons.Filled.TableChart
+    Kind.SLIDE -> Icons.Filled.Slideshow
+    Kind.EBOOK -> Icons.Filled.AutoStories
+    Kind.MARKDOWN -> Icons.AutoMirrored.Filled.Article
+    Kind.CODE -> Icons.Filled.Code
+    Kind.SCRIPT -> Icons.Filled.Terminal
     Kind.TEXT -> Icons.AutoMirrored.Filled.TextSnippet
     Kind.OTHER -> Icons.AutoMirrored.Filled.InsertDriveFile
 }
@@ -159,6 +197,13 @@ fun kindColor(kind: Kind): Color {
         Kind.AUDIO -> c.audio
         Kind.ARCHIVE -> c.archive
         Kind.APK -> c.apk
+        Kind.PDF -> c.pdf
+        Kind.DOC -> c.doc
+        Kind.SHEET -> c.sheet
+        Kind.SLIDE -> c.slide
+        Kind.EBOOK -> c.audio
+        Kind.MARKDOWN -> c.doc
+        Kind.CODE, Kind.SCRIPT -> c.code
         Kind.TEXT -> c.text
         Kind.OTHER -> c.other
     }
@@ -187,10 +232,21 @@ fun FileIcon(source: FileSource, dir: String, e: FEntry, size: Dp) {
     ) {
         if (thumb != null) {
             Image(thumb, null, Modifier.size(size), contentScale = if (kind == Kind.APK) ContentScale.Fit else ContentScale.Crop)
+        } else if (officeLetter(kind) != null) {
+            // Office files: the letter everyone knows reads faster than a generic glyph.
+            Text(officeLetter(kind)!!, color = tint, fontWeight = FontWeight.Black,
+                fontSize = with(LocalDensity.current) { (size * 0.46f).toSp() })
         } else {
             Icon(kindIcon(kind), null, Modifier.size(size * 0.58f), tint = tint)
         }
     }
+}
+
+private fun officeLetter(kind: Kind): String? = when (kind) {
+    Kind.DOC -> "W"
+    Kind.SHEET -> "X"
+    Kind.SLIDE -> "P"
+    else -> null
 }
 
 @Composable

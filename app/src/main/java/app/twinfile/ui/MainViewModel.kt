@@ -18,6 +18,9 @@ import app.twinfile.fs.Volumes
 import app.twinfile.ops.Ops
 import app.twinfile.ops.Transfer
 import app.twinfile.util.FileLog
+import app.twinfile.update.Updater
+import app.twinfile.priv.RootShell
+import app.twinfile.priv.ShellSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +40,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var toast by mutableStateOf<String?>(null)
     /** Full-screen image/text viewer, if open. */
     var viewer by mutableStateOf<Viewer?>(null)
+    /** File waiting in the 打开方式 dialog. */
+    var openRequest by mutableStateOf<OpenRequest?>(null)
+    /** Bumped when something outside asks to show a file; the main screen comes to the front. */
+    var locateTick by mutableIntStateOf(0)
     /** Bumped when storage usage should be re-read for the title line. */
     var storageVersion by mutableIntStateOf(0)
 
@@ -47,6 +54,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val internal = Volumes.internalPath()
         open(panes[0], prefs.homeLeft.ifEmpty { internal }, push = false)
         open(panes[1], prefs.homeRight.ifEmpty { internal }, push = false)
+        if (prefs.autoUpdate) viewModelScope.launch {
+            kotlinx.coroutines.delay(2500) // let the first listing settle
+            checkUpdate(manual = false)
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 app.trash.autoClean(Volumes.list(app).map { it.path }, prefs.trashAutoCleanDays)
@@ -60,9 +71,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         toast = msg
     }
 
+    // ---- updates ----
+
+    /** A newer release to offer; non-null shows the update dialog. */
+    var update by mutableStateOf<Updater.Release?>(null)
+    /** Download progress 0..1 while fetching the APK. */
+    var updateProgress by mutableStateOf<Float?>(null)
+    private var updateJob: kotlinx.coroutines.Job? = null
+
+    /** Silent at startup; [manual] also reports "up to date" and errors. */
+    fun checkUpdate(manual: Boolean) {
+        viewModelScope.launch {
+            if (manual) say("正在检查更新…")
+            try {
+                val r = withContext(Dispatchers.IO) { Updater.check() }
+                if (r != null) update = r else if (manual) say("已是最新版本 v${Updater.current}")
+            } catch (e: Exception) {
+                FileLog.w("update check", e)
+                if (manual) say("检查更新失败：${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    fun downloadUpdate(r: Updater.Release) {
+        if (updateJob?.isActive == true) return
+        updateProgress = 0f
+        updateJob = viewModelScope.launch {
+            try {
+                val apk = withContext(Dispatchers.IO) {
+                    Updater.download(app, r) { done, total ->
+                        if (total > 0) updateProgress = (done.toFloat() / total).coerceIn(0f, 1f)
+                        updateJob?.isActive != false
+                    }
+                }
+                updateProgress = null
+                if (!Updater.install(app, apk)) say("请允许 TwinFile 安装应用，然后再点「更新」")
+            } catch (e: Exception) {
+                updateProgress = null
+                if (e !is java.util.concurrent.CancellationException) {
+                    FileLog.w("update download", e)
+                    say(e.message ?: "下载失败")
+                }
+            }
+        }
+    }
+
+    fun cancelUpdate() {
+        updateJob?.cancel()
+        updateProgress = null
+        update = null
+    }
+
     // ---- navigation ----
 
-    fun open(pane: PaneState, path: String, source: FileSource = pane.source, push: Boolean = true) {
+    fun open(pane: PaneState, path: String, requested: FileSource = pane.source, push: Boolean = true) {
+        val source = route(requested, path)
         val target = Loc(source.id, path)
         if (pane.path.isNotEmpty()) {
             pane.scrollMemory[pane.loc] = pane.listState.firstVisibleItemIndex to pane.listState.firstVisibleItemScrollOffset
@@ -83,6 +146,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         load(pane, restore = pane.scrollMemory[target] ?: (0 to 0), keepScroll = sameFolder)
     }
 
+    /**
+     * Android/data and obb go through root/Shizuku when enabled; once back in ordinary folders
+     * the local source takes over again (faster, with thumbnails and trash).
+     */
+    private fun route(source: FileSource, path: String): FileSource {
+        val priv = app.priv ?: return source
+        val restricted = isRestricted(path)
+        return when {
+            source === app.local && restricted -> priv
+            source === priv && !restricted && VOLUME.matches(path) -> app.local
+            else -> source
+        }
+    }
+
+    private fun isRestricted(path: String) = android.os.Build.VERSION.SDK_INT >= 30 && RESTRICTED.matches(path)
+
+    fun setPrivMode(mode: String) {
+        fun apply() {
+            prefs.update { privMode = mode }
+            app.applyPrivMode()
+            // Panes showing the old privileged source move to the new one (or back to local).
+            panes.forEach { p -> if (p.source.id == ShellSource.ID) open(p, p.path, app.local, push = false) else refresh(p) }
+            say(when (mode) { "ROOT" -> "已开启 Root 访问"; "SHIZUKU" -> "已开启 Shizuku 访问"; else -> "已关闭高级访问" })
+        }
+        when (mode) {
+            "ROOT" -> viewModelScope.launch {
+                say("正在请求 Root 权限…")
+                if (withContext(Dispatchers.IO) { RootShell.available() }) apply() else say("没有获得 Root 权限")
+            }
+            "SHIZUKU" -> {
+                if (!rikka.shizuku.Shizuku.pingBinder()) return say("Shizuku 未运行：请先安装 Shizuku 并启动服务")
+                if (rikka.shizuku.Shizuku.isPreV11()) return say("Shizuku 版本过旧，请更新")
+                if (rikka.shizuku.Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED) return apply()
+                val listener = object : rikka.shizuku.Shizuku.OnRequestPermissionResultListener {
+                    override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                        rikka.shizuku.Shizuku.removeRequestPermissionResultListener(this)
+                        if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) apply() else say("没有获得 Shizuku 授权")
+                    }
+                }
+                rikka.shizuku.Shizuku.addRequestPermissionResultListener(listener)
+                rikka.shizuku.Shizuku.requestPermission(SHIZUKU_REQUEST)
+            }
+            else -> apply()
+        }
+    }
+
     private fun load(pane: PaneState, restore: Pair<Int, Int>, keepScroll: Boolean) {
         val gen = ++pane.loadGen
         val source = pane.source
@@ -100,9 +209,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pane.loading = false
             result.onSuccess {
                 pane.raw = it
-                pane.error = null
+                pane.error = if (it.size <= 1 && source === app.local && isRestricted(path))
+                    "Android 11 起，系统不允许应用直接访问 Android/data 和 obb。\n在「设置 → 高级访问」开启 Shizuku 或 Root 后即可浏览。"
+                else null
+                val reveal = pane.reveal?.let { n -> pane.visible.indexOfFirst { e -> e.name == n } }?.takeIf { i -> i >= 0 }
+                pane.reveal = null
+                if (reveal != null) pane.listState.scrollToItem(maxOf(0, reveal - 3))
                 if (!keepScroll) {
-                    pane.listState.scrollToItem(restore.first, restore.second)
+                    if (reveal == null) pane.listState.scrollToItem(restore.first, restore.second)
                     pane.navDir = pane.pendingDir
                     pane.navTick++
                 }
@@ -134,19 +248,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val container = pane.source.container
         if (pane.path == "/" && container != null) {
             // Leave the archive to the folder that holds it.
+            pane.reveal = Paths.name(container)
             open(pane, Paths.parent(container) ?: "/", app.local)
-            pane.selected = setOf(Paths.name(container))
+            pane.flash = Paths.name(container)
+            pane.flashTick++
             return
         }
         val parent = Paths.parent(pane.path) ?: return
         val from = Paths.name(pane.path)
-        open(pane, parent)
         // Land on the folder we came from.
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(60)
-            val i = pane.visible.indexOfFirst { it.name == from }
-            if (i >= 0) pane.listState.scrollToItem(maxOf(0, i - 3))
-        }
+        pane.reveal = from
+        open(pane, parent)
     }
 
     fun back(pane: PaneState) {
@@ -198,7 +310,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val images = pane.visible.filter { !it.isDir && Kinds.of(it) == Kind.IMAGE }
                 viewer = Viewer.Images(pane.source, pane.path, images, images.indexOfFirst { it.name == e.name }.coerceAtLeast(0))
             }
-            Kinds.of(e) == Kind.TEXT || (e.size in 0..64 * 1024 && Paths.extension(e.name).isEmpty()) ->
+            Kinds.of(e).textual || (e.size in 0..64 * 1024 && Paths.extension(e.name).isEmpty()) ->
                 viewer = Viewer.Text(pane.source, path, e)
             Paths.extension(e.name) in ARCHIVES -> withLocalCopy(pane, e) { openArchive(pane, it) }
             else -> withLocalCopy(pane, e, external)
@@ -235,6 +347,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (p == "/") return pane.source.container?.let { Paths.name(it) } ?: if (pane.source === app.local) "根目录" else pane.source.title
         if (pane.source === app.local && p == Volumes.internalPath()) return "内部存储"
         return Paths.name(p)
+    }
+
+    /** Breadcrumb segments for the title bar: (label, path), root first. */
+    fun crumbs(pane: PaneState): List<Pair<String, String>> {
+        val p = pane.path
+        val src = pane.source
+        val internal = Volumes.internalPath()
+        val (rootLabel, rootPath) = when {
+            src.container != null -> Paths.name(src.container!!) to "/"
+            src.phonePaths && Paths.isInside(p, internal) -> "内部存储" to internal
+            src.phonePaths -> "根目录" to "/"
+            else -> src.title to "/"
+        }
+        val out = mutableListOf(rootLabel to rootPath)
+        var cur = rootPath
+        p.removePrefix(rootPath).split('/').filter { it.isNotEmpty() }.forEach { seg ->
+            cur = Paths.join(cur, seg)
+            out += seg to cur
+        }
+        return out
     }
 
     // ---- sorting ----
@@ -391,19 +523,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Copies or moves [entries] of [from] into the other pane's folder. */
     fun transfer(from: PaneState, entries: List<FEntry>, move: Boolean, toSamePane: Boolean = false) {
         val to = if (toSamePane) from else panes[1 - from.index]
-        val src = from.source
-        val dst = to.source
-        val srcDir = from.path
-        val dstDir = to.path
-        if (!toSamePane && src === dst && srcDir == dstDir && move) return say("两个窗口是同一个文件夹")
-        val paths = entries.map { Paths.join(srcDir, it.name) }
+        if (!toSamePane && from.source === to.source && from.path == to.path && move) return say("两个窗口是同一个文件夹")
         from.selected = emptySet()
+        runTransfer(from.source, from.path, entries, to.source, to.path, move)
+    }
+
+    private fun runTransfer(src: FileSource, srcDir: String, entries: List<FEntry>, dst: FileSource, dstDir: String, move: Boolean) {
+        val paths = entries.map { Paths.join(srcDir, it.name) }
         val verb = if (move) "移动" else "复制"
         Ops.start("$verb ${entries.size} 项到 ${Paths.name(dstDir)}", { job ->
             Transfer(src, paths, dst, dstDir, move, prefs.keepMtime, job.stats) { job.ask(it) }.run()
         }) {
             viewModelScope.launch { refreshShowing(src, srcDir); refreshShowing(dst, dstDir) }
         }
+    }
+
+    // ---- clipboard (single-pane mode) ----
+
+    /** Files picked with 复制/剪切, waiting to be pasted into some folder. */
+    data class Clip(val source: FileSource, val dir: String, val entries: List<FEntry>, val move: Boolean)
+
+    var clip by mutableStateOf<Clip?>(null)
+
+    fun toClip(pane: PaneState, entries: List<FEntry>, move: Boolean) {
+        clip = Clip(pane.source, pane.path, entries, move)
+        pane.selected = emptySet()
+    }
+
+    fun paste(pane: PaneState) {
+        val c = clip ?: return
+        if (c.source === pane.source && c.dir == pane.path) {
+            if (c.move) return say("文件已在这个文件夹")
+            // Copy into the same folder: duplicates with numbered names.
+        } else if (c.source === pane.source && c.entries.any { Paths.isInside(pane.path, Paths.join(c.dir, it.name)) && it.isDir }) {
+            return say("不能粘贴到它自己里面")
+        }
+        if (c.move) clip = null
+        runTransfer(c.source, c.dir, c.entries, pane.source, pane.path, c.move)
     }
 
     // ---- bookmarks & home ----
@@ -432,12 +588,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         focus = pane.index
         if (isDir) open(pane, path, src)
         else {
+            pane.reveal = Paths.name(path)
             open(pane, Paths.parent(path) ?: "/", src)
-            pane.selected = setOf(Paths.name(path))
+            // Light it up instead of selecting, so a tap still opens it.
+            pane.flash = Paths.name(path)
+            pane.flashTick++
         }
     }
 
     private companion object {
         val ARCHIVES = setOf("zip", "apks", "xapk", "jar")
+        val RESTRICTED = Regex("""^/storage/(emulated/\d+|[^/]+)/Android/(data|obb)(/.*)?$""")
+        val VOLUME = Regex("""^/storage/(emulated/\d+|[^/]+)(/.*)?$""")
+        const val SHIZUKU_REQUEST = 7
     }
 }

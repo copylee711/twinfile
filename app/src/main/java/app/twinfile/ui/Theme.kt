@@ -53,6 +53,11 @@ data class TwinColors(
     val apk: Color,
     val text: Color,
     val other: Color,
+    val pdf: Color,
+    val doc: Color,
+    val sheet: Color,
+    val slide: Color,
+    val code: Color,
 )
 
 val LocalTwin = staticCompositionLocalOf { twinColors(Color(0xFF4A5566), false) }
@@ -64,12 +69,16 @@ private fun twinColors(accent: Color, dark: Boolean): TwinColors = if (dark) Twi
     folder = accent, image = Color(0xFF7FB89A), video = Color(0xFFD99089),
     audio = Color(0xFFB9A1D6), archive = Color(0xFFD4B07A), apk = Color(0xFF8CC39B),
     text = Color(0xFF9FA8B4), other = Color(0xFF8F939B),
+    pdf = Color(0xFFE08A84), doc = Color(0xFF8FB0E8), sheet = Color(0xFF83C79E), slide = Color(0xFFE3A57B),
+    code = Color(0xFFADA4E0),
 ) else TwinColors(
     paneFocused = Color(0xFFFFFFFF), pane = Color(0xFFEFEFEC), paneBorder = accent,
     selection = accent.copy(alpha = 0.14f), muted = Color(0xFF7B7D84),
     folder = accent, image = Color(0xFF3F8A66), video = Color(0xFFB4554C),
     audio = Color(0xFF7D5FA6), archive = Color(0xFFA77A2C), apk = Color(0xFF4A8A5A),
     text = Color(0xFF5B6573), other = Color(0xFF878B93),
+    pdf = Color(0xFFC2453F), doc = Color(0xFF3B6FC4), sheet = Color(0xFF2E8A57), slide = Color(0xFFC46A2E),
+    code = Color(0xFF6A5FB0),
 )
 
 private fun schemeFor(accent: Color, dark: Boolean): ColorScheme = if (dark) darkColorScheme(

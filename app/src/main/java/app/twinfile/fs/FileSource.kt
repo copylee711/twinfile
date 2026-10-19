@@ -58,6 +58,8 @@ interface FileSource {
     /** For a source living inside a local file (a zip): that file's path. ".." at "/" leaves to it. */
     val container: String? get() = null
     val readOnly: Boolean get() = false
+    /** Paths are this phone's own file system (local, or local through root/Shizuku). */
+    val phonePaths: Boolean get() = false
 
     /** Where the user can start; also the path shown as "home". */
     fun roots(): List<Root>

@@ -16,6 +16,7 @@ class LocalSource(
 ) : FileSource {
     override val id = "local"
     override val title = "本地"
+    override val phonePaths: Boolean get() = true
     override val caps = setOf(Cap.SERVER_MOVE, Cap.SERVER_COPY, Cap.TRASH, Cap.THUMB, Cap.MTIME)
 
     override fun roots() = rootsProvider()

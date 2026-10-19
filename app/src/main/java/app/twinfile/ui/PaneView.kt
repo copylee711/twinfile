@@ -37,6 +37,13 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.getValue
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +69,7 @@ fun PaneView(
     onLongPress: (FEntry) -> Unit,
     onOpenFile: (FEntry) -> Unit,
     modifier: Modifier = Modifier,
+    showHeader: Boolean = true,
 ) {
     val twin = LocalTwin.current
     val compact = vm.prefs.compact
@@ -69,14 +77,23 @@ fun PaneView(
     val showParent = pane.path.isNotEmpty() && vm.canGoUp(pane)
     val shape = RoundedCornerShape(14.dp)
     val touchSlop = LocalViewConfiguration.current.touchSlop
+    val view = LocalView.current
+    val enterPx = with(LocalDensity.current) { 56.dp.toPx() }
 
     Column(
         modifier
             .clip(shape)
             .background(if (focused) twin.paneFocused else twin.pane)
             .border(if (focused) 1.5.dp else 0.dp, if (focused) twin.paneBorder.copy(alpha = 0.55f) else twin.pane, shape)
+            // Any touch inside a pane (rows, empty space, header, a scroll) makes it the active one.
+            .pointerInput(pane.index) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    vm.focus = pane.index
+                }
+            }
     ) {
-        PaneHeader(vm.label(pane), pane, focused)
+        if (showHeader) PaneHeader(vm.label(pane), pane, focused)
         // Folder change: the new listing slides in from the side it came from and fades up.
         val slide = remember(pane) { Animatable(0f) }
         LaunchedEffect(pane.navTick) {
@@ -94,9 +111,12 @@ fun PaneView(
                         alpha = 1f - abs(slide.value) * 0.75f
                     }
                     .pointerInput(pane, rows, showParent) {
-                        swipeSelect(pane.listState, touchSlop,
+                        swipeSelect(pane.listState, touchSlop, enterPx,
+                            selecting = { pane.selecting },
                             isSelected = { it in pane.selected },
                             onFocus = { vm.focus = pane.index },
+                            onDrag = { key, dx -> pane.swipeKey = key; pane.swipeOffset = dx },
+                            onEnter = { view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) },
                             set = { key, on -> vm.select(pane, key, on) })
                     },
             ) {
@@ -187,10 +207,26 @@ private fun FileRow(
     onLongClick: () -> Unit,
 ) {
     val twin = LocalTwin.current
+    // Follows the finger while a sideways drag is about to start selection, then springs back.
+    val held = pane.swipeKey == e.name
+    val shift by animateFloatAsState(
+        if (held) pane.swipeOffset else 0f,
+        if (held) snap() else spring(dampingRatio = 0.6f, stiffness = 600f),
+        label = "swipe",
+    )
+    // A located entry glows once and fades back.
+    val glow = remember { Animatable(0f) }
+    if (pane.flash == e.name) LaunchedEffect(pane.flashTick) {
+        glow.snapTo(1f)
+        kotlinx.coroutines.delay(500)
+        glow.animateTo(0f, tween(1200))
+        if (pane.flash == e.name) pane.flash = null
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .background(if (selected) twin.selection else androidx.compose.ui.graphics.Color.Transparent)
+            .background(if (selected) twin.selection else twin.paneBorder.copy(alpha = 0.22f * glow.value))
+            .graphicsLayer { translationX = shift }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 8.dp, vertical = if (compact) 4.dp else 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -204,8 +240,11 @@ private fun FileRow(
                 color = if (e.hidden) twin.muted else MaterialTheme.colorScheme.onSurface,
             )
             if (!compact || !e.isDir) {
-                val meta = if (e.isDir) Format.time(e.mtime) else "${Format.time(e.mtime)}  ${Format.size(e.size)}"
-                Text(meta, fontSize = 11.sp, color = twin.muted, maxLines = 1)
+                // Non-breaking spaces keep date and size whole: in a narrow pane the size wraps
+                // to its own line instead of losing its unit.
+                val meta = if (e.isDir) Format.time(e.mtime)
+                else Format.time(e.mtime).replace(' ', Typography.nbsp) + "  " + Format.size(e.size).replace(' ', Typography.nbsp)
+                Text(meta, fontSize = 11.sp, lineHeight = 14.sp, color = twin.muted, maxLines = 2)
             }
         }
     }
@@ -218,8 +257,12 @@ private fun FileRow(
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.swipeSelect(
     list: LazyListState,
     slop: Float,
+    enterPx: Float,
+    selecting: () -> Boolean,
     isSelected: (String) -> Boolean,
     onFocus: () -> Unit,
+    onDrag: (String?, Float) -> Unit,
+    onEnter: () -> Unit,
     set: (String, Boolean) -> Unit,
 ) {
     fun keyAt(y: Float): Pair<Int, String>? {
@@ -233,38 +276,63 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.swipeSel
         val start = keyAt(down.position.y) ?: return@awaitEachGesture
         var dx = 0f
         var dy = 0f
+        var dragging = false // row follows the finger before selection mode starts
         var painting = false
         var mode = true
         var lastIndex = start.first
-        while (true) {
-            val ev = awaitPointerEvent(PointerEventPass.Initial)
-            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-            if (!ch.pressed) break
-            if (!painting) {
-                val d = ch.positionChange()
-                dx += d.x
-                dy += d.y
-                if (abs(dy) > slop && abs(dy) > abs(dx)) break // a scroll: not ours
-                if (abs(dx) > slop * 1.5f && abs(dx) > abs(dy) * 1.5f) {
-                    painting = true
-                    onFocus()
-                    mode = !isSelected(start.second)
-                    set(start.second, mode)
-                }
-            }
-            if (painting) {
-                ch.consume()
-                val hit = keyAt(ch.position.y)
-                if (hit != null && hit.first != lastIndex) {
-                    // Fill rows skipped by a fast move.
-                    val range = if (hit.first > lastIndex) (lastIndex + 1)..hit.first else hit.first until lastIndex
-                    for (info in list.layoutInfo.visibleItemsInfo) {
-                        val k = info.key as? String ?: continue
-                        if (info.index in range && !k.startsWith("\u0000")) set(k, mode)
+        try {
+            while (true) {
+                val ev = awaitPointerEvent(PointerEventPass.Initial)
+                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                if (!ch.pressed) break
+                if (!painting) {
+                    val d = ch.positionChange()
+                    dx += d.x
+                    dy += d.y
+                    if (!dragging) {
+                        if (abs(dy) > slop && abs(dy) > abs(dx)) break // a scroll: not ours
+                        if (abs(dx) > slop * 1.5f && abs(dx) > abs(dy) * 1.5f) {
+                            if (selecting()) {
+                                // Already selecting: toggle right away, no transition.
+                                painting = true
+                                onFocus()
+                                mode = !isSelected(start.second)
+                                set(start.second, mode)
+                            } else dragging = true
+                        }
                     }
-                    lastIndex = hit.first
+                    if (dragging && !painting) {
+                        ch.consume()
+                        // Rubber band past the threshold.
+                        val over = (abs(dx) - enterPx).coerceAtLeast(0f)
+                        val shown = (abs(dx).coerceAtMost(enterPx) + over * 0.3f) * kotlin.math.sign(dx)
+                        onDrag(start.second, shown)
+                        if (abs(dx) >= enterPx) {
+                            onEnter()
+                            painting = true
+                            onFocus()
+                            mode = true
+                            set(start.second, true)
+                            onDrag(null, 0f)
+                        }
+                    }
+                }
+                if (painting) {
+                    ch.consume()
+                    val hit = keyAt(ch.position.y)
+                    if (hit != null && hit.first != lastIndex) {
+                        // Fill rows skipped by a fast move.
+                        val range = if (hit.first > lastIndex) (lastIndex + 1)..hit.first else hit.first until lastIndex
+                        for (info in list.layoutInfo.visibleItemsInfo) {
+                            val k = info.key as? String ?: continue
+                            if (info.index in range && !k.startsWith("\u0000")) set(k, mode)
+                        }
+                        lastIndex = hit.first
+                    }
                 }
             }
+        } finally {
+            onDrag(null, 0f)
         }
     }
 }

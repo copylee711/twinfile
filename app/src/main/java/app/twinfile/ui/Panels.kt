@@ -43,11 +43,14 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,10 +110,12 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
             VolumeRow(Icons.Filled.Storage, "根目录", Volumes.total("/"), Volumes.free("/")) {
                 vm.openBookmark(vm.active, "local", "/"); close()
             }
-            if (vm.prefs.bookmarks.isNotEmpty()) {
-                Section("书签")
-                vm.prefs.bookmarks.take(8).forEach { b ->
-                    DrawerItem(Icons.Filled.Bookmark, b.name, b.path) { vm.openBookmark(vm.active, b.source, b.path); close() }
+            vm.app.priv?.let { priv ->
+                DrawerItem(Icons.Filled.Shield, "Android/data", "通过 ${priv.title} 访问") {
+                    vm.openBookmark(vm.active, "local", Volumes.internalPath() + "/Android/data"); close()
+                }
+                if (vm.prefs.privMode == "ROOT") DrawerItem(Icons.Filled.Shield, "根目录 · Root", "整个系统，包括 /data") {
+                    vm.openBookmark(vm.active, priv.id, "/"); close()
                 }
             }
             if (vm.app.net.locations.isNotEmpty()) {
@@ -126,6 +131,23 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                     vm.app.pc.source(pc)?.cachedPlaces()?.forEach { place ->
                         DrawerItem(Icons.Filled.Folder, "　${place.name}", null) { vm.openBookmark(vm.active, pc.sourceId, place.path); close() }
                     }
+                }
+            }
+            if (vm.prefs.bookmarks.isNotEmpty()) {
+                // Collapsible, so a long list doesn't push the tools out of reach.
+                val open = vm.prefs.drawerBookmarks
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.prefs.update { drawerBookmarks = !drawerBookmarks } }
+                        .padding(start = 20.dp, end = 16.dp, top = 10.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("书签 · ${vm.prefs.bookmarks.size}", Modifier.weight(1f), fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, if (open) "收起" else "展开",
+                        tint = MaterialTheme.colorScheme.primary)
+                }
+                if (open) vm.prefs.bookmarks.forEach { b ->
+                    DrawerItem(Icons.Filled.Bookmark, b.name, b.path) { vm.openBookmark(vm.active, b.source, b.path); close() }
                 }
             }
             Section("工具")

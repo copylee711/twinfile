@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Two overlapping folders: the twin panes. -->
+<!-- Two plain folder silhouettes, offset: cobalt behind, charcoal in front with one rule line. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <group android:scaleX="1.15" android:scaleY="1.15" android:pivotX="55" android:pivotY="56">
-    <path android:fillColor="#8FA8F0"
-        android:pathData="M30,38a4,4 0,0 1,4 -4h10l4,4h18a4,4 0,0 1,4 4v22a4,4 0,0 1,-4 4h-32a4,4 0,0 1,-4 -4z" />
-    <path android:fillColor="#1A2445" android:fillAlpha="0.35"
-        android:pathData="M40,50a4,4 0,0 1,4 -4h10l4,4h18a4,4 0,0 1,4 4v22a4,4 0,0 1,-4 4h-32a4,4 0,0 1,-4 -4z" />
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M39,48a4,4 0,0 1,4 -4h10l4,4h19a4,4 0,0 1,4 4v22a4,4 0,0 1,-4 4h-33a4,4 0,0 1,-4 -4z" />
-    <path android:fillColor="#DCE4FB"
-        android:pathData="M39,52h40v4h-40z" />
+    <group android:translateY="-4.5">
+        <path android:fillColor="#2F5BE7"
+            android:pathData="M32,37H42.5C43.6,37 44.6,37.5 45.2,38.4L47.6,42H62A4,4 0,0 1,66 46V66A4,4 0,0 1,62 70H32A4,4 0,0 1,28 66V41A4,4 0,0 1,32 37Z" />
+        <path android:fillColor="#1E222B"
+            android:pathData="M44,53H55.2L58.6,48.8C59.2,48.3 60,48 60.8,48H76A4,4 0,0 1,80 52V76A4,4 0,0 1,76 80H44A4,4 0,0 1,40 76V57A4,4 0,0 1,44 53Z" />
+        <path android:fillColor="#E3E6EC"
+            android:pathData="M47.2,59.2H72.8A1.2,1.2 0,0 1,74 60.4V60.6A1.2,1.2 0,0 1,72.8 61.8H47.2A1.2,1.2 0,0 1,46 60.6V60.4A1.2,1.2 0,0 1,47.2 59.2Z" />
     </group>
 </vector>
