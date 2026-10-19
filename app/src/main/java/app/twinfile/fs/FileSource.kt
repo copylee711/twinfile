@@ -55,6 +55,9 @@ interface FileSource {
     /** Name shown to the user. */
     val title: String
     val caps: Set<Cap>
+    /** For a source living inside a local file (a zip): that file's path. ".." at "/" leaves to it. */
+    val container: String? get() = null
+    val readOnly: Boolean get() = false
 
     /** Where the user can start; also the path shown as "home". */
     fun roots(): List<Root>

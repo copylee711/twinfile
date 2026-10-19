@@ -125,7 +125,7 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
     BackHandler(!drawer.isOpen && active.selecting) { vm.clearSelection(active) }
     BackHandler(!drawer.isOpen && !active.selecting && active.filter.isNotEmpty()) { active.filter = "" }
-    BackHandler(!drawer.isOpen && !active.selecting && active.filter.isEmpty() && Paths.parent(active.path) != null) { vm.up(active) }
+    BackHandler(!drawer.isOpen && !active.selecting && active.filter.isEmpty() && vm.canGoUp(active)) { vm.up(active) }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -198,7 +198,9 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
             "跳转到", d.pane.path, onDismiss = close,
             buttons = listOf("前往" to { p: String ->
                 close()
-                val path = Paths.normalize(p.trim())
+                var path = Paths.normalize(p.trim().replace('／', '/').replace('\\', '/'))
+                // Resolve links such as /sdcard so volume features (trash, usage) apply.
+                if (d.pane.source === vm.app.local) path = runCatching { File(path).canonicalPath }.getOrDefault(path)
                 vm.open(d.pane, path)
             }),
         )
@@ -355,7 +357,7 @@ private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, o
             BarButton(Icons.AutoMirrored.Filled.ArrowForward, "前进", pane.canForward) { vm.forward(pane) }
             BarButton(Icons.Filled.Add, "新建") { show(Dlg.NewItem(pane)) }
             BarButton(Icons.Filled.SwapHoriz, "同步到另一栏（长按交换）", onLong = { vm.swapPanes() }) { vm.syncOther() }
-            BarButton(Icons.Filled.ArrowUpward, "上一级", Paths.parent(pane.path) != null) { vm.up(pane) }
+            BarButton(Icons.Filled.ArrowUpward, "上一级", vm.canGoUp(pane)) { vm.up(pane) }
         }
     }
 }

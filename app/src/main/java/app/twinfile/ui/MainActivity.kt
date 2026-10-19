@@ -53,7 +53,15 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
         }
         setContent {
-            TwinTheme {
+            val prefs = vm.prefs
+            val dark = isDark(DarkMode.of(prefs.darkMode))
+            androidx.compose.runtime.LaunchedEffect(dark) {
+                // Status/navigation bar icons follow the app's own light/dark choice.
+                val style = if (dark) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                else androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                enableEdgeToEdge(style, style)
+            }
+            TwinTheme(Palette.of(prefs.palette), DarkMode.of(prefs.darkMode)) {
                 if (!granted) PermissionScreen(::requestStorage)
                 else AppNav()
             }
@@ -98,7 +106,16 @@ class MainActivity : ComponentActivity() {
         BackHandler(screen != Screen.MAIN) { screen = Screen.MAIN }
         val back = { screen = Screen.MAIN }
         when (screen) {
-            Screen.MAIN -> MainScreen(vm, { screen = it }, ::openFile, actions)
+            Screen.MAIN -> {
+                MainScreen(vm, { screen = it }, ::openFile, actions)
+                when (val v = vm.viewer) {
+                    is Viewer.Images -> ImageViewer(v, { vm.viewer = null },
+                        share = { Opener.share(this, listOf(it)) }, openExternal = { Opener.open(this, it) })
+                    is Viewer.Text -> TextViewer(v, { vm.viewer = null },
+                        openExternal = if (v.source === vm.app.local) ({ Opener.open(this, File(v.path), "text/plain") }) else null)
+                    null -> {}
+                }
+            }
             Screen.TRASH -> TrashScreen(vm, back)
             Screen.SETTINGS -> SettingsScreen(vm, back)
             Screen.APPS, Screen.NETWORK, Screen.PC -> ComingSoon(screen, back)
@@ -106,19 +123,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(pane: PaneState, e: FEntry) {
-        if (pane.source !== vm.app.local) {
-            vm.say("远程文件请先复制到手机再打开")
-            return
-        }
-        val f = localFile(pane, e)
-        vm.prefs.addRecent("local", f.path, false)
-        if (!Opener.open(this, f)) vm.say("没有可以打开此文件的应用")
+        vm.openFile(pane, e) { f -> if (!Opener.open(this, f)) vm.say("没有可以打开此文件的应用") }
     }
 
     private val actions = object : FileActions {
         override fun openWith(pane: PaneState, e: FEntry) {
-            val f = localFile(pane, e)
-            if (!Opener.open(this@MainActivity, f, "*/*")) vm.say("没有可用的应用")
+            vm.withLocalCopy(pane, e) { f -> if (!Opener.open(this@MainActivity, f, "*/*")) vm.say("没有可用的应用") }
         }
 
         override fun share(pane: PaneState, entries: List<FEntry>) {

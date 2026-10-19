@@ -18,8 +18,11 @@ data class Recent(val source: String, val path: String, val isDir: Boolean, val 
 /** Settings, bookmarks and history; observable from Compose, saved as JSON on every change. */
 class Prefs(dir: File) {
     private val store = JsonStore(File(dir, "settings.json"))
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     var dualPane by mutableStateOf(true)
+    var palette by mutableStateOf("GRAPHITE")
+    var darkMode by mutableStateOf("SYSTEM")
     var showHidden by mutableStateOf(false)
     var compact by mutableStateOf(false)
     var trashEnabled by mutableStateOf(true)
@@ -38,6 +41,8 @@ class Prefs(dir: File) {
     init {
         val j = store.load()
         dualPane = j.optBoolean("dualPane", true)
+        palette = j.optString("palette", "GRAPHITE")
+        darkMode = j.optString("darkMode", "SYSTEM")
         showHidden = j.optBoolean("showHidden", false)
         compact = j.optBoolean("compact", false)
         trashEnabled = j.optBoolean("trashEnabled", true)
@@ -57,9 +62,15 @@ class Prefs(dir: File) {
         }
     }
 
+    /** Snapshots state on the caller's thread and writes it on a background thread. */
     fun save() {
-        val j = JSONObject()
-            .put("dualPane", dualPane).put("showHidden", showHidden).put("compact", compact)
+        val j = snapshot()
+        writer.execute { store.save(j) }
+    }
+
+    private fun snapshot(): JSONObject {
+        return JSONObject()
+            .put("dualPane", dualPane).put("palette", palette).put("darkMode", darkMode).put("showHidden", showHidden).put("compact", compact)
             .put("trashEnabled", trashEnabled).put("trashByDefault", trashByDefault)
             .put("trashAutoCleanDays", trashAutoCleanDays).put("keepMtime", keepMtime)
             .put("homeLeft", homeLeft).put("homeRight", homeRight)
@@ -71,8 +82,8 @@ class Prefs(dir: File) {
             .put("recent", JSONArray().also { a ->
                 recent.forEach { a.put(JSONObject().put("source", it.source).put("path", it.path).put("dir", it.isDir).put("time", it.time)) }
             })
-        store.save(j)
     }
+
 
     inline fun update(block: Prefs.() -> Unit) {
         block()

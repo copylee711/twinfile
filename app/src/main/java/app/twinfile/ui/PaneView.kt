@@ -60,7 +60,7 @@ fun PaneView(
     val twin = LocalTwin.current
     val compact = vm.prefs.compact
     val rows = pane.visible
-    val showParent = pane.path != "/" && pane.path.isNotEmpty()
+    val showParent = pane.path.isNotEmpty() && vm.canGoUp(pane)
     val shape = RoundedCornerShape(14.dp)
     val touchSlop = LocalViewConfiguration.current.touchSlop
 
@@ -70,7 +70,7 @@ fun PaneView(
             .background(if (focused) twin.paneFocused else twin.pane)
             .border(if (focused) 1.5.dp else 0.dp, if (focused) twin.paneBorder.copy(alpha = 0.55f) else twin.pane, shape)
     ) {
-        PaneHeader(pane, focused)
+        PaneHeader(vm.label(pane), pane, focused)
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = pane.listState,
@@ -121,7 +121,7 @@ fun PaneView(
 }
 
 @Composable
-private fun PaneHeader(pane: PaneState, focused: Boolean) {
+private fun PaneHeader(label: String, pane: PaneState, focused: Boolean) {
     val twin = LocalTwin.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
@@ -133,7 +133,7 @@ private fun PaneHeader(pane: PaneState, focused: Boolean) {
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            if (pane.path == "/") "/" else Paths.name(pane.path),
+            label,
             fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
             color = if (focused) MaterialTheme.colorScheme.onSurface else twin.muted,
             modifier = Modifier.weight(1f),

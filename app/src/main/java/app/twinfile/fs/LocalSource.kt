@@ -22,8 +22,20 @@ class LocalSource(
 
     override fun list(dir: String): List<FEntry> {
         val f = File(dir)
-        val names = f.list() ?: throw FsException(if (f.isDirectory) "无法读取此文件夹：$dir" else "文件夹不存在：$dir")
+        val names = f.list() ?: virtualChildren(dir)
+            ?: throw FsException(if (f.isDirectory) "无法读取此文件夹：$dir" else "文件夹不存在：$dir")
         return names.map { entry(File(f, it), withPerms = false) }
+    }
+
+    /**
+     * Folders like /storage/emulated can't be listed on Android 11+, yet volumes live below
+     * them. Show the next path segment of every volume root so the user can walk back down.
+     */
+    private fun virtualChildren(dir: String): Array<String>? {
+        val prefix = if (dir.endsWith("/")) dir else "$dir/"
+        val names = roots().map { it.path }.filter { it.startsWith(prefix) }
+            .map { it.removePrefix(prefix).substringBefore('/') }.distinct()
+        return names.takeIf { it.isNotEmpty() }?.toTypedArray()
     }
 
     override fun stat(path: String): FEntry? {

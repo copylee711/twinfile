@@ -21,6 +21,8 @@ import app.twinfile.util.FileLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import app.twinfile.fs.ZipSource
+import java.io.File
 import java.util.Calendar
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,6 +35,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var focus by mutableIntStateOf(0)
     /** One-line message shown at the bottom (snackbar). */
     var toast by mutableStateOf<String?>(null)
+    /** Full-screen image/text viewer, if open. */
+    var viewer by mutableStateOf<Viewer?>(null)
     /** Bumped when storage usage should be re-read for the title line. */
     var storageVersion by mutableIntStateOf(0)
 
@@ -69,6 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val sameFolder = target == pane.loc
+        if (push && !sameFolder && source.container == null) prefs.addRecent(source.id, path, true)
         pane.source = source
         pane.path = path
         pane.selected = emptySet()
@@ -117,7 +122,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         panes.forEach { refresh(it) }
     }
 
+    fun canGoUp(pane: PaneState) = Paths.parent(pane.path) != null || pane.source.container != null
+
     fun up(pane: PaneState) {
+        val container = pane.source.container
+        if (pane.path == "/" && container != null) {
+            // Leave the archive to the folder that holds it.
+            open(pane, Paths.parent(container) ?: "/", app.local)
+            pane.selected = setOf(Paths.name(container))
+            return
+        }
         val parent = Paths.parent(pane.path) ?: return
         val from = Paths.name(pane.path)
         open(pane, parent)
@@ -165,6 +179,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (e.isDir) {
             open(pane, Paths.join(pane.path, e.name))
         }
+    }
+
+    /** Opens a file: built-in viewers for images/text, archives as folders, else [external]. */
+    fun openFile(pane: PaneState, e: FEntry, external: (File) -> Unit) {
+        focus = pane.index
+        val path = Paths.join(pane.path, e.name)
+        val local = pane.source === app.local
+        if (local) prefs.addRecent("local", path, false)
+        when {
+            Kinds.of(e) == Kind.IMAGE -> {
+                val images = pane.visible.filter { !it.isDir && Kinds.of(it) == Kind.IMAGE }
+                viewer = Viewer.Images(pane.source, pane.path, images, images.indexOfFirst { it.name == e.name }.coerceAtLeast(0))
+            }
+            Kinds.of(e) == Kind.TEXT || (e.size in 0..64 * 1024 && Paths.extension(e.name).isEmpty()) ->
+                viewer = Viewer.Text(pane.source, path, e)
+            Paths.extension(e.name) in ARCHIVES -> withLocalCopy(pane, e) { openArchive(pane, it) }
+            else -> withLocalCopy(pane, e, external)
+        }
+    }
+
+    /** Runs [block] with a local file for [e], downloading remote files to the cache first. */
+    fun withLocalCopy(pane: PaneState, e: FEntry, block: (File) -> Unit) {
+        if (pane.source === app.local) return block(File(Paths.join(pane.path, e.name)))
+        val source = pane.source
+        val path = Paths.join(pane.path, e.name)
+        say("正在读取 ${e.name}…")
+        io("读取失败") {
+            val dir = File(app.cacheDir, "open/${(source.id + path).hashCode().toUInt()}").apply { mkdirs() }
+            val f = File(dir, e.name)
+            if (!(f.isFile && f.length() == e.size && f.lastModified() == e.mtime)) {
+                source.openRead(path).use { input -> f.outputStream().use { input.copyTo(it, 256 * 1024) } }
+                if (e.mtime > 0) f.setLastModified(e.mtime)
+            }
+            withContext(Dispatchers.Main) { block(f) }
+        }
+    }
+
+    fun openArchive(pane: PaneState, file: File) {
+        io("无法打开压缩包") {
+            val src = app.sources["zip:${file.path}"] ?: ZipSource(file).also { app.sources[it.id] = it }
+            withContext(Dispatchers.Main) { open(pane, "/", src) }
+        }
+    }
+
+    /** Short label for a pane: volume names instead of "0", archive names at their root. */
+    fun label(pane: PaneState): String {
+        val p = pane.path
+        if (p == "/") return pane.source.container?.let { Paths.name(it) } ?: if (pane.source === app.local) "根目录" else pane.source.title
+        if (pane.source === app.local && p == Volumes.internalPath()) return "内部存储"
+        return Paths.name(p)
     }
 
     // ---- sorting ----
@@ -358,5 +422,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             open(pane, Paths.parent(path) ?: "/", src)
             pane.selected = setOf(Paths.name(path))
         }
+    }
+
+    private companion object {
+        val ARCHIVES = setOf("zip", "apks", "xapk", "jar")
     }
 }

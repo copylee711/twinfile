@@ -1,6 +1,17 @@
 package app.twinfile.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -141,6 +152,8 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
     var cleanDialog by remember { mutableStateOf(false) }
     SimpleScaffold("设置", back) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
+            Group("外观")
+            ThemePicker(vm)
             Group("界面")
             Toggle("双栏", "竖屏左右两栏；关闭后只显示一栏", p.dualPane) { p.update { dualPane = it } }
             Toggle("紧凑列表", "更小的图标和行距", p.compact) { p.update { compact = it } }
@@ -176,6 +189,56 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
             },
             confirmButton = {},
         )
+    }
+}
+
+@Composable
+private fun ThemePicker(vm: MainViewModel) {
+    val p = vm.prefs
+    val dark = isDark(DarkMode.of(p.darkMode))
+    Text("主题色", Modifier.padding(start = 16.dp, top = 6.dp), fontSize = 15.sp)
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Palette.entries.filter { it != Palette.DYNAMIC || Palette.dynamicSupported }.forEach { pal ->
+            val selected = Palette.of(p.palette) == pal
+            Column(
+                Modifier.clip(RoundedCornerShape(12.dp)).clickable { p.update { palette = pal.name } }.padding(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val color = if (pal == Palette.DYNAMIC) MaterialTheme.colorScheme.primary
+                else Color(if (dark) pal.dark else pal.light)
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape)
+                        .background(if (pal == Palette.DYNAMIC) Brush.sweepGradient(listOf(Color(0xFF6E8BD6), Color(0xFF7FB89A), Color(0xFFD4B07A), Color(0xFFC98AA0), Color(0xFF6E8BD6))) else SolidColor(color))
+                        .border(if (selected) 3.dp else 0.dp, if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) Icon(Icons.Filled.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+                Text(pal.label, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else LocalTwin.current.muted)
+            }
+        }
+    }
+    Text("深色模式", Modifier.padding(start = 16.dp, top = 4.dp), fontSize = 15.sp)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        DarkMode.entries.forEachIndexed { i, m ->
+            val on = DarkMode.of(p.darkMode) == m
+            val shape = when (i) {
+                0 -> RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)
+                DarkMode.entries.size - 1 -> RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
+                else -> RoundedCornerShape(0.dp)
+            }
+            Box(
+                Modifier.weight(1f).clip(shape)
+                    .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable { p.update { darkMode = m.name } }.padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(m.label, fontSize = 14.sp, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+            }
+        }
     }
 }
 
