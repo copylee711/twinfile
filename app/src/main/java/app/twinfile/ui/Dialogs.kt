@@ -301,7 +301,7 @@ private fun HashBlock(source: FileSource, path: String, size: Long, copy: (Strin
     }
     val r = result
     if (r == null) {
-        LinearProgressIndicator({ progress }, Modifier.fillMaxWidth())
+        Bar({ progress }, Modifier.fillMaxWidth())
         return
     }
     fun f(s: String) = if (upper) s.uppercase() else s
@@ -391,7 +391,7 @@ fun UpdateDialog(vm: MainViewModel, r: app.twinfile.update.Updater.Release) {
                     Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 10.dp))
                 }
                 if (progress != null) {
-                    androidx.compose.material3.LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 12.dp))
+                    Bar({ progress }, Modifier.fillMaxWidth().padding(top = 12.dp))
                     Text("正在下载 ${(progress * 100).toInt()}%", fontSize = 12.sp, color = LocalTwin.current.muted,
                         modifier = Modifier.padding(top = 4.dp))
                 }

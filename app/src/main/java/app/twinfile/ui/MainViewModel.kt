@@ -203,6 +203,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     SyncBoardBridge.State.NOT_APPROVED -> askSyncBoard { ok -> if (ok) setPrivMode(mode) }
                     SyncBoardBridge.State.NOT_RUNNING -> say("SyncBoard 手机服务没有运行，请先打开 SyncBoard 启动")
                     SyncBoardBridge.State.NOT_INSTALLED -> say("没有安装 SyncBoard")
+                    SyncBoardBridge.State.OUTDATED -> say("请先把 SyncBoard 更新到 0.4.1 或更新版本")
                 }
             }
             else -> apply()

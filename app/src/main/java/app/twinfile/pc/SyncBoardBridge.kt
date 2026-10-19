@@ -32,7 +32,10 @@ object SyncBoardBridge {
     private const val PORT = 53318
     private const val CHUNK = 256 * 1024
 
-    enum class State { NOT_INSTALLED, NOT_RUNNING, NOT_APPROVED, READY }
+    enum class State { NOT_INSTALLED, OUTDATED, NOT_RUNNING, NOT_APPROVED, READY }
+
+    /** SyncBoard 0.4.1 (versionCode 13) is the first that serves other apps. */
+    private const val MIN_VERSION_CODE = 13L
 
     class NotApproved : FsException("需要在 SyncBoard 里允许 TwinFile 使用它的连接")
 
@@ -41,7 +44,10 @@ object SyncBoardBridge {
 
     /** Blocking. */
     fun state(context: Context): State {
-        if (!installed(context)) return State.NOT_INSTALLED
+        val info = runCatching { context.packageManager.getPackageInfo(PACKAGE, 0) }.getOrNull() ?: return State.NOT_INSTALLED
+        @Suppress("DEPRECATION")
+        val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        if (code < MIN_VERSION_CODE) return State.OUTDATED
         return try {
             open(JSONObject().put("cmd", "hello")).use { State.READY }
         } catch (_: NotApproved) {

@@ -188,7 +188,7 @@ private fun VolumeRow(icon: ImageVector, name: String, total: Long, free: Long, 
             Text(name, fontSize = 15.sp)
             if (total > 0) {
                 val used = total - free
-                LinearProgressIndicator({ (used.toFloat() / total).coerceIn(0f, 1f) },
+                Bar({ (used.toFloat() / total).coerceIn(0f, 1f) },
                     Modifier.fillMaxWidth().padding(vertical = 4.dp).height(4.dp).clip(RoundedCornerShape(2.dp)))
                 Text("已用 ${Format.size(used)} · 可用 ${Format.size(free)}", fontSize = 12.sp, color = twin.muted)
             }
@@ -247,7 +247,8 @@ class PullSheetState {
 @Composable
 fun BookmarkPanel(vm: MainViewModel, state: PullSheetState) {
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableIntStateOf(if (vm.prefs.bookmarks.isEmpty()) 0 else 1) }
+    // 最近 and 书签 are pages: swipe sideways or tap a tab.
+    val pager = androidx.compose.foundation.pager.rememberPagerState(if (vm.prefs.bookmarks.isEmpty()) 0 else 1) { 2 }
     var editing by remember { mutableStateOf<Bookmark?>(null) }
     val close: () -> Unit = { scope.launch { state.animateTo(0f) } }
     BackHandler(state.visible) { close() }
@@ -275,12 +276,13 @@ fun BookmarkPanel(vm: MainViewModel, state: PullSheetState) {
                     Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), contentAlignment = Alignment.Center) {
                         Box(Modifier.size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(LocalTwin.current.muted.copy(alpha = 0.4f)))
                     }
-                    TabRow(tab, containerColor = Color.Transparent) {
-                        Tab(tab == 0, { tab = 0 }, text = { Text("最近") })
-                        Tab(tab == 1, { tab = 1 }, text = { Text("书签") })
+                    TabRow(pager.currentPage, containerColor = Color.Transparent) {
+                        Tab(pager.currentPage == 0, { scope.launch { pager.animateScrollToPage(0) } }, text = { Text("最近") })
+                        Tab(pager.currentPage == 1, { scope.launch { pager.animateScrollToPage(1) } }, text = { Text("书签") })
                     }
                 }
-                LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
+                androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f)) { tab ->
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = WindowInsets.navigationBars.asPaddingValues()) {
                     if (tab == 0) {
                         if (vm.prefs.recent.isEmpty()) item { Empty("还没有访问记录") }
                         itemsIndexed(vm.prefs.recent, key = { _, r -> r.source + r.path }) { _, r ->
@@ -296,6 +298,7 @@ fun BookmarkPanel(vm: MainViewModel, state: PullSheetState) {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -413,7 +416,7 @@ private fun JobCard(job: OpJob) {
                     else -> null
                 }
                 Box(Modifier.padding(end = 8.dp, top = 4.dp)) {
-                    if (p != null) LinearProgressIndicator({ p }, Modifier.fillMaxWidth())
+                    if (p != null) Bar({ p }, Modifier.fillMaxWidth())
                     else LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
             }
@@ -421,3 +424,9 @@ private fun JobCard(job: OpJob) {
     }
 }
 
+
+/** A determinate progress bar without Material 3's gap and end dot, which read as clutter here. */
+@Composable
+fun Bar(progress: () -> Float, modifier: Modifier = Modifier) {
+    LinearProgressIndicator(progress, modifier, gapSize = 0.dp, drawStopIndicator = {})
+}

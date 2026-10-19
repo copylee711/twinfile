@@ -56,6 +56,7 @@ MIT 许可。
 
 Android 11 起，应用不能直接访问 `Android/data` 和 `Android/obb`。在「设置 → 高级访问」选择：
 
+- **SyncBoard**：手机上装了 SyncBoard（0.4.1 及以上）并在运行时，借它的手机服务访问，第一次需要在 SyncBoard 里允许
 - **Shizuku**（免 Root）：先安装 [Shizuku](https://github.com/RikkaApps/Shizuku) 并启动服务，TwinFile 第一次使用时会请求授权
 - **Root**：通过 `su` 执行，还能浏览整个系统（抽屉里的「根目录 · Root」）
 
@@ -66,6 +67,8 @@ Android 11 起，应用不能直接访问 `Android/data` 和 `Android/obb`。在
 启动时会静默检查 GitHub Release，有新版本时弹窗：可以直接下载安装（会核对 SHA256SUMS.txt）、以后再说，或不再检查。设置里可以关闭自动检查、手动检查，或打开发布页。
 
 ## 让手机管理电脑上的文件
+
+手机上已经装了 SyncBoard 的话，在「电脑」页点「在 SyncBoard 里允许」，就能直接用它连接的电脑，不用再配对。没装的话按下面的步骤让 TwinFile 自己配对：
 
 1. 电脑上安装 SyncBoard 桌面端（需要包含「允许已配对设备浏览这台电脑的文件」这个开关的版本）。
 2. 在 SyncBoard 设置里打开「允许已配对设备浏览这台电脑的文件」。默认是关闭的。

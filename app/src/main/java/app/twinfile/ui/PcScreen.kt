@@ -249,6 +249,9 @@ private fun SyncBoardCard(vm: MainViewModel) {
                     Spacer(Modifier.height(8.dp))
                     Button({ vm.askSyncBoard() }) { Text("在 SyncBoard 里允许") }
                 }
+                app.twinfile.pc.SyncBoardBridge.State.OUTDATED ->
+                    Text("这台手机装了 SyncBoard，更新到 0.4.1 或更新版本后，可以直接使用它已连接的电脑，也能借它访问 Android/data。",
+                        fontSize = 13.sp, color = twin.muted, lineHeight = 19.sp)
                 app.twinfile.pc.SyncBoardBridge.State.NOT_RUNNING ->
                     Text("SyncBoard 手机服务没有运行。打开 SyncBoard 启动后，这里会显示它连接的电脑。", fontSize = 13.sp, color = twin.muted)
                 else -> if (pcm.viaSyncBoard.isEmpty()) {
