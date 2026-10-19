@@ -128,7 +128,10 @@ class MainActivity : ComponentActivity() {
                 screen = Screen.MAIN
                 vm.openSource(vm.active, c.sourceId)
             }
-            Screen.PC -> ComingSoon(screen, back)
+            Screen.PC -> PcScreen(vm, back) { pc ->
+                screen = Screen.MAIN
+                vm.openSource(vm.active, pc.sourceId)
+            }
         }
     }
 
@@ -183,17 +186,3 @@ private fun PermissionScreen(request: () -> Unit) {
         Button(request) { Text("授予权限") }
     }
 }
-
-@Composable
-private fun ComingSoon(screen: Screen, back: () -> Unit) {
-    val title = when (screen) {
-        Screen.APPS -> "已安装应用"
-        Screen.NETWORK -> "网络位置"
-        Screen.PC -> "电脑"
-        else -> ""
-    }
-    SimpleScaffold(title, back) {
-        Text("开发中", Modifier.padding(24.dp), color = LocalTwin.current.muted)
-    }
-}
-

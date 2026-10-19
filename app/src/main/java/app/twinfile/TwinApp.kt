@@ -6,6 +6,7 @@ import app.twinfile.fs.FileSource
 import app.twinfile.fs.LocalSource
 import app.twinfile.fs.Volumes
 import app.twinfile.net.NetManager
+import app.twinfile.pc.PcManager
 import app.twinfile.ops.Ops
 import app.twinfile.ops.Trash
 import app.twinfile.util.FileLog
@@ -23,6 +24,8 @@ class TwinApp : Application() {
     val sources: MutableMap<String, FileSource> = java.util.concurrent.ConcurrentHashMap()
     lateinit var net: NetManager
         private set
+    lateinit var pc: PcManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +38,7 @@ class TwinApp : Application() {
         sources[local.id] = local
         trash = Trash { path -> Volumes.of(this, path)?.path }
         net = NetManager(this)
+        pc = PcManager(this)
     }
 
     fun source(id: String): FileSource? = sources[id]

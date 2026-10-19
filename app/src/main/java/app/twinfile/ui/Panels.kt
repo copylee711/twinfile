@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SdCard
@@ -100,6 +101,15 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                 Section("网络位置")
                 vm.app.net.locations.forEach { c ->
                     DrawerItem(Icons.Filled.Lan, c.display, "${c.type.label} · ${c.host}") { vm.openSource(vm.active, c.sourceId); close() }
+                }
+            }
+            if (vm.app.pc.pcs.isNotEmpty()) {
+                Section("电脑")
+                vm.app.pc.pcs.forEach { pc ->
+                    DrawerItem(Icons.Filled.Computer, pc.display, "磁盘与文件夹") { vm.openSource(vm.active, pc.sourceId); close() }
+                    vm.app.pc.source(pc)?.cachedPlaces()?.forEach { place ->
+                        DrawerItem(Icons.Filled.Folder, "　${place.name}", null) { vm.openBookmark(vm.active, pc.sourceId, place.path); close() }
+                    }
                 }
             }
             Section("工具")

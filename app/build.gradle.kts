@@ -75,6 +75,11 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Scanning the SyncBoard pairing QR (same stack as SyncBoard's phone app).
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.zxing.core)
     // Network locations; see README for why each library and its size cost.
     implementation(libs.commons.net)
     implementation(libs.sshj)

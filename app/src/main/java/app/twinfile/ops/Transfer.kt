@@ -122,8 +122,10 @@ class Transfer(
                 // Different volumes: fall through to copy + delete.
             }
         }
-        if (same && !move && Cap.SERVER_COPY in src.caps && !e.isDir) {
+        if (same && Cap.SERVER_COPY in src.caps && !e.isDir) {
+            // Also the fallback when a move across volumes failed: copy on the server, then delete.
             src.copy(path, target, progress)
+            if (move) src.delete(path)
             stats.doneFiles++
             return true
         }
