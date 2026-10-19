@@ -387,6 +387,9 @@ fun UpdateDialog(vm: MainViewModel, r: app.twinfile.update.Updater.Release) {
                 if (r.notes.isNotBlank()) {
                     Box(Modifier.heightIn(max = 300.dp)) { MarkdownView(r.notes) }
                 }
+                vm.updateError?.let {
+                    Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 10.dp))
+                }
                 if (progress != null) {
                     androidx.compose.material3.LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 12.dp))
                     Text("正在下载 ${(progress * 100).toInt()}%", fontSize = 12.sp, color = LocalTwin.current.muted,
@@ -395,15 +398,21 @@ fun UpdateDialog(vm: MainViewModel, r: app.twinfile.update.Updater.Release) {
             }
         },
         confirmButton = {
-            if (progress == null) TextButton({ vm.downloadUpdate(r) }) { Text("更新") }
+            if (progress == null) TextButton({ vm.downloadUpdate(r) }) { Text(if (vm.updateError != null) "重试" else "更新") }
             else TextButton({ vm.cancelUpdate() }) { Text("取消下载") }
         },
         dismissButton = {
+            val context = androidx.compose.ui.platform.LocalContext.current
             if (progress == null) Row {
-                TextButton({ vm.prefs.update { autoUpdate = false }; vm.update = null; vm.say("已关闭自动检查更新，可在设置里重新打开") }) {
-                    Text("不再检查")
+                if (vm.updateError != null) {
+                    // The browser may have a proxy or a better route to GitHub.
+                    TextButton({ app.twinfile.update.Updater.openPage(context, r.page) }) { Text("在浏览器中下载") }
+                } else {
+                    TextButton({ vm.prefs.update { autoUpdate = false }; vm.update = null; vm.say("已关闭自动检查更新，可在设置里重新打开") }) {
+                        Text("不再检查")
+                    }
                 }
-                TextButton({ vm.update = null }) { Text("以后再说") }
+                TextButton({ vm.cancelUpdate() }) { Text("以后再说") }
             }
         },
     )

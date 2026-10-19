@@ -13,6 +13,11 @@ object Volumes {
 
     fun internalPath(): String = Environment.getExternalStorageDirectory().path
 
+    private val RESTRICTED = Regex("""^/storage/(emulated/\d+|[^/]+)/Android/(data|obb)(/.*)?$""")
+
+    /** Android/data and obb, which apps can't read directly since Android 11. */
+    fun isRestricted(path: String) = Build.VERSION.SDK_INT >= 30 && RESTRICTED.matches(path)
+
     fun list(context: Context): List<Volume> {
         val sm = context.getSystemService(StorageManager::class.java)
         val out = ArrayList<Volume>()

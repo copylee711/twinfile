@@ -245,6 +245,7 @@ private fun AppDialog(vm: MainViewModel, app: AppItem, close: () -> Unit, onExtr
                     DropdownMenuItem({ Text("在窗口中打开 APK 所在位置") }, {
                         menu = false; close()
                         vm.openBookmark(vm.active, "local", app.info.sourceDir, isDir = false)
+                        vm.locateTick++ // back to the file panes
                     })
                     if (!app.system) DropdownMenuItem({ Text("卸载") }, {
                         menu = false; close()

@@ -160,7 +160,7 @@ class MainActivity : ComponentActivity() {
             Screen.TRASH -> TrashScreen(vm, back)
             Screen.SETTINGS -> SettingsScreen(vm, back)
             Screen.APPS -> AppsScreen(vm, back) { f ->
-                // Show the extracted file selected in the active pane, ready to share or copy.
+                // Show the extracted file highlighted in the active pane.
                 screen = Screen.MAIN
                 vm.openBookmark(vm.active, "local", f.path, isDir = false)
                 vm.say("已提取到 ${f.parent}")

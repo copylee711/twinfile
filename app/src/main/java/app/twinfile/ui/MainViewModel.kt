@@ -77,6 +77,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var update by mutableStateOf<Updater.Release?>(null)
     /** Download progress 0..1 while fetching the APK. */
     var updateProgress by mutableStateOf<Float?>(null)
+    /** Why the last download or install attempt stopped; shown inside the dialog. */
+    var updateError by mutableStateOf<String?>(null)
     private var updateJob: kotlinx.coroutines.Job? = null
 
     /** Silent at startup; [manual] also reports "up to date" and errors. */
@@ -96,6 +98,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadUpdate(r: Updater.Release) {
         if (updateJob?.isActive == true) return
         updateProgress = 0f
+        updateError = null
         updateJob = viewModelScope.launch {
             try {
                 val apk = withContext(Dispatchers.IO) {
@@ -105,12 +108,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 updateProgress = null
-                if (!Updater.install(app, apk)) say("请允许 TwinFile 安装应用，然后再点「更新」")
+                if (!Updater.install(app, apk)) updateError = "请在打开的设置里允许 TwinFile 安装应用，然后再点「更新」"
             } catch (e: Exception) {
                 updateProgress = null
                 if (e !is java.util.concurrent.CancellationException) {
                     FileLog.w("update download", e)
-                    say(e.message ?: "下载失败")
+                    updateError = when (e) {
+                        is java.net.SocketException, is java.net.SocketTimeoutException, is java.net.UnknownHostException ->
+                            "连接 GitHub 下载失败（${e.message ?: e.javaClass.simpleName}）。可以重试，或在浏览器中下载"
+                        else -> e.message ?: "下载失败"
+                    }
                 }
             }
         }
@@ -119,6 +126,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelUpdate() {
         updateJob?.cancel()
         updateProgress = null
+        updateError = null
         update = null
     }
 
@@ -160,7 +168,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun isRestricted(path: String) = android.os.Build.VERSION.SDK_INT >= 30 && RESTRICTED.matches(path)
+    private fun isRestricted(path: String) = Volumes.isRestricted(path)
 
     fun setPrivMode(mode: String) {
         fun apply() {
@@ -598,7 +606,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         val ARCHIVES = setOf("zip", "apks", "xapk", "jar")
-        val RESTRICTED = Regex("""^/storage/(emulated/\d+|[^/]+)/Android/(data|obb)(/.*)?$""")
         val VOLUME = Regex("""^/storage/(emulated/\d+|[^/]+)(/.*)?$""")
         const val SHIZUKU_REQUEST = 7
     }
