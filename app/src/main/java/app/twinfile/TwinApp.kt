@@ -5,6 +5,7 @@ import android.system.Os
 import app.twinfile.fs.FileSource
 import app.twinfile.fs.LocalSource
 import app.twinfile.fs.Volumes
+import app.twinfile.net.NetManager
 import app.twinfile.ops.Ops
 import app.twinfile.ops.Trash
 import app.twinfile.util.FileLog
@@ -19,7 +20,9 @@ class TwinApp : Application() {
         private set
 
     /** Every source a pane can show, by [FileSource.id]. Network and PC sources register here. */
-    val sources = LinkedHashMap<String, FileSource>()
+    val sources: MutableMap<String, FileSource> = java.util.concurrent.ConcurrentHashMap()
+    lateinit var net: NetManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -31,6 +34,7 @@ class TwinApp : Application() {
         local = LocalSource({ Volumes.roots(this) }, ::modeString)
         sources[local.id] = local
         trash = Trash { path -> Volumes.of(this, path)?.path }
+        net = NetManager(this)
     }
 
     fun source(id: String): FileSource? = sources[id]

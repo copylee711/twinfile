@@ -6,7 +6,15 @@ coreKtx = "1.16.0"
 activityCompose = "1.8.2"
 lifecycle = "2.9.4"
 iconsExtended = "1.7.8"
+commonsNet = "3.13.0"
+sshj = "0.41.1"
+smbj = "0.15.0"
+okhttp = "4.12.0"
+bouncycastle = "1.85"
 junit = "4.13.2"
+sshd = "2.15.0"
+ftpserver = "1.2.1"
+kxml = "2.3.0"
 orgJson = "20240303"
 
 [libraries]
@@ -20,6 +28,15 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-compose-icons = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "iconsExtended" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+commons-net = { group = "commons-net", name = "commons-net", version.ref = "commonsNet" }
+sshj = { group = "com.hierynomus", name = "sshj", version.ref = "sshj" }
+smbj = { group = "com.hierynomus", name = "smbj", version.ref = "smbj" }
+bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+sshd-sftp = { group = "org.apache.sshd", name = "sshd-sftp", version.ref = "sshd" }
+ftpserver = { group = "org.apache.ftpserver", name = "ftpserver-core", version.ref = "ftpserver" }
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
+kxml2 = { group = "net.sf.kxml", name = "kxml2", version.ref = "kxml" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 

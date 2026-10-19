@@ -414,6 +414,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         say("已设为${if (pane.index == 0) "左" else "右"}窗口首页")
     }
 
+    /** Shows a source's home folder in [pane]. */
+    fun openSource(pane: PaneState, sourceId: String) {
+        val src = app.source(sourceId) ?: return say("位置不可用")
+        focus = pane.index
+        open(pane, src.home(), src)
+    }
+
     fun openBookmark(pane: PaneState, sourceId: String, path: String, isDir: Boolean = true) {
         val src = app.source(sourceId) ?: return say("位置不可用")
         focus = pane.index

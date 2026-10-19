@@ -56,6 +56,10 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // android.util.Log and friends return defaults instead of throwing in JVM tests.
+        unitTests.isReturnDefaultValues = true
+    }
     packaging {
         resources.excludes += setOf("META-INF/**", "kotlin/**", "DebugProbesKt.bin")
     }
@@ -71,7 +75,25 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // Network locations; see README for why each library and its size cost.
+    implementation(libs.commons.net)
+    implementation(libs.sshj)
+    implementation(libs.bcprov)
+    implementation(libs.smbj)
+    implementation(libs.okhttp)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
+    // Real servers for the network-source contract tests; test classpath only.
+    testImplementation(libs.sshd.sftp)
+    testImplementation(libs.ftpserver)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.kxml2)
+}
+
+// sshj and smbj pull different BouncyCastle releases whose jars overlap; use one for all.
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.bouncycastle") useVersion(libs.versions.bouncycastle.get())
+    }
 }

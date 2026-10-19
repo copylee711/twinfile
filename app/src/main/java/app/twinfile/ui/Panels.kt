@@ -96,6 +96,12 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                     DrawerItem(Icons.Filled.Bookmark, b.name, b.path) { vm.openBookmark(vm.active, b.source, b.path); close() }
                 }
             }
+            if (vm.app.net.locations.isNotEmpty()) {
+                Section("网络位置")
+                vm.app.net.locations.forEach { c ->
+                    DrawerItem(Icons.Filled.Lan, c.display, "${c.type.label} · ${c.host}") { vm.openSource(vm.active, c.sourceId); close() }
+                }
+            }
             Section("工具")
             DrawerItem(Icons.Filled.Lan, "网络位置") { close(); navigate(Screen.NETWORK) }
             DrawerItem(Icons.Filled.Computer, "电脑") { close(); navigate(Screen.PC) }

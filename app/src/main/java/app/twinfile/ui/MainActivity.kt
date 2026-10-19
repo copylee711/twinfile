@@ -124,7 +124,11 @@ class MainActivity : ComponentActivity() {
                 vm.openBookmark(vm.active, "local", f.path, isDir = false)
                 vm.say("已提取到 ${f.parent}")
             }
-            Screen.NETWORK, Screen.PC -> ComingSoon(screen, back)
+            Screen.NETWORK -> NetworkScreen(vm, back) { c ->
+                screen = Screen.MAIN
+                vm.openSource(vm.active, c.sourceId)
+            }
+            Screen.PC -> ComingSoon(screen, back)
         }
     }
 

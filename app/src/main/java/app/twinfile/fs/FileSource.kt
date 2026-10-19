@@ -39,7 +39,7 @@ fun interface Progress {
 val NoProgress = Progress { _, _ -> true }
 
 /** An error whose message is meant for the user. */
-class FsException(message: String, cause: Throwable? = null) : IOException(message, cause)
+open class FsException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 class CancelledException : IOException("cancelled")
 
