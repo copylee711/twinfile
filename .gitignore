@@ -9,3 +9,6 @@ local.properties
 *.apks
 *.keystore
 out/
+
+# Private maintainer review notes stay outside the repository.
+/docs/oauth-publication.md
