@@ -99,9 +99,9 @@ class ArchivePasswordTest {
             Archive.compress(listOf(src), archive, TransferStats(), format)
             val dst = tmp.newFolder()
             val root = Archive.extract(archive, dst, TransferStats())
-            assertArrayEquals(format.name, payload.readBytes(), File(root, "目录/嵌套/data.bin").readBytes())
-            assertTrue(File(root, "目录/empty").isDirectory)
-            assertEquals("bundle", root.name)
+            assertArrayEquals(format.name, payload.readBytes(), File(root, "嵌套/data.bin").readBytes())
+            assertTrue(File(root, "empty").isDirectory)
+            assertEquals("目录", root.name)
         }
     }
 

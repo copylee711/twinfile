@@ -253,8 +253,8 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
                 add(MenuAction("重命名", Icons.Filled.DriveFileRenameOutline, single != null) { show(Dlg.Rename(p, single!!)) })
                 add(MenuAction("创建副本", Icons.Filled.ControlPointDuplicate) { vm.transfer(p, es, move = false, toSamePane = true) })
                 if (single != null && !single.isDir && app.twinfile.ops.Archive.format(single.name) != null) {
-                    if (vm.prefs.dualPane) add(MenuAction("解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
-                    add(MenuAction("解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
+                    if (vm.prefs.dualPane) add(MenuAction("智能解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
+                    add(MenuAction("智能解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
                 }
                 add(MenuAction("压缩", Icons.Filled.Archive, isLocal) { show(Dlg.Compress(p, es)) })
                 add(MenuAction("属性", Icons.Filled.Info) { show(Dlg.Props(p, es)) })

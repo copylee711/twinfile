@@ -23,7 +23,7 @@ enum class ArchiveFormat(val label: String, val suffix: String) {
     ZIP("ZIP", ".zip"), SEVEN_Z("7z", ".7z"), TAR("TAR", ".tar"), TAR_GZ("TAR.GZ", ".tar.gz");
 }
 
-/** Local archives. Failed extraction cleans up only the new destination folder. */
+/** Local archives. Extraction is staged and published as one non-overwriting directory. */
 object Archive {
     fun format(name: String): ArchiveFormat? = when {
         name.endsWith(".tar.gz", true) || name.endsWith(".tgz", true) -> ArchiveFormat.TAR_GZ
@@ -79,10 +79,9 @@ object Archive {
             else -> format.suffix
         }
         val base = file.name.dropLast(suffix.length).ifEmpty { "解压文件" }
-        val root = File(dstDir, Paths.freeName(base, true) { File(dstDir, it).exists() })
         val parent = dstDir.canonicalFile
-        if (root.canonicalFile.parentFile != parent) throw FsException("解压目标无效")
-        if (!root.mkdir()) throw FsException("无法创建文件夹：${root.name}")
+        if (!parent.isDirectory) throw FsException("解压目标无效")
+        val root = Files.createTempDirectory(parent.toPath(), ".twinfile-extract-").toFile()
         val totals = stats.totalBytes to stats.totalFiles
         val done = stats.doneBytes to stats.doneFiles
         try {
@@ -102,7 +101,18 @@ object Archive {
                     stats.doneFiles++
                 }
             }
-            return root
+            checkCancelled(stats)
+            val children = root.listFiles() ?: throw FsException("无法读取解压目录")
+            // Keep a sole archive-owned folder, otherwise contain all loose entries in the
+            // archive's own name. Never strip meaningful nested folders inside that folder.
+            val content = children.singleOrNull()?.takeIf { it.isDirectory } ?: root
+            val name = if (content === root) base else content.name
+            val output = File(parent, Paths.freeName(name, true) { File(parent, it).exists() })
+            if (output.canonicalFile.parentFile != parent) throw FsException("解压目标无效")
+            // No REPLACE_EXISTING: a concurrent destination creation must fail, not overwrite.
+            Files.move(content.toPath(), output.toPath())
+            if (content !== root) root.delete()
+            return output
         } catch (e: Exception) {
             if (root.canonicalFile.parentFile == parent) root.deleteRecursively()
             stats.totalBytes = totals.first; stats.totalFiles = totals.second

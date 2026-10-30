@@ -25,8 +25,8 @@ android {
         applicationId = "app.twinfile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.5.1"
         buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"${providers.gradleProperty("twinfile.microsoftClientId").orNull ?: System.getenv("TWINFILE_MICROSOFT_CLIENT_ID") ?: ""}\"")
         buildConfigField("boolean", "GOOGLE_DRIVE_ENABLED", (providers.gradleProperty("twinfile.googleDriveEnabled").orNull ?: System.getenv("TWINFILE_GOOGLE_DRIVE_ENABLED") ?: "false").toBoolean().toString())
         buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"${providers.gradleProperty("twinfile.googleAndroidClientId").orNull ?: System.getenv("TWINFILE_GOOGLE_ANDROID_CLIENT_ID") ?: ""}\"")

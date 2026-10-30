@@ -76,6 +76,8 @@ jobs:
           ./gradlew assembleRelease :app:testDebugUnitTest
           mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk "out/TwinFile-${{ steps.v.outputs.version }}.apk"
+          # Stable latest-release download URL for the product page.
+          cp app/build/outputs/apk/release/app-release.apk out/TwinFile.apk
 
       - name: Check the signing certificate
         shell: bash
@@ -89,7 +91,7 @@ jobs:
         working-directory: out
         # "<hash>  <name>", no "*" before names.
         run: |
-          sha256sum TwinFile-* > SHA256SUMS.txt
+          sha256sum TwinFile*.apk > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4

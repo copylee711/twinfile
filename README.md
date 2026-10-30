@@ -6,9 +6,10 @@
 
 **开源、免费的 Android 双栏文件管理器**
 
-本地文件、网络共享与电脑文件，在两个窗口之间自由整理。
+统一管理本地存储、网络共享、电脑文件与已授权云盘。
 
 <p>
+  <a href="https://copylee.cn/twinfile/"><img src="https://img.shields.io/badge/Website-TwinFile-1c1c20?style=flat-square" alt="产品主页"></a>
   <a href="https://github.com/copylee711/twinfile/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-%E6%9C%80%E6%96%B0%E7%89%88_APK-2F5BE7?style=flat-square&amp;logo=android&amp;logoColor=white" alt="下载 APK"></a>
   <a href="https://github.com/copylee711/twinfile/releases"><img src="https://img.shields.io/github/v/release/copylee711/twinfile?style=flat-square&amp;label=%E7%89%88%E6%9C%AC" alt="Release"></a>
   <a href="https://github.com/copylee711/twinfile/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/copylee711/twinfile/release.yml?style=flat-square&amp;label=%E6%9E%84%E5%BB%BA" alt="Build"></a>
@@ -17,7 +18,7 @@
   <a href="docs/development.md"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-%E6%9E%84%E5%BB%BA%E4%B8%8E%E5%8F%91%E7%89%88-555?style=flat-square" alt="Docs"></a>
 </p>
 
-操作习惯参照 MT 管理器，常用文件操作和网络位置全部免费。
+双栏独立导航，支持跨来源文件操作；所有功能免费开放。
 
 </div>
 
@@ -30,7 +31,7 @@
 
 - **双栏与单栏浏览**：两栏独立导航、面包屑、前进后退、自然排序、过滤和隐藏文件。
 - **选择与文件操作**：滑动选择、拖动连续选择、复制、移动、重命名、新建、同名冲突处理、回收站和校验值计算；耗时任务显示进度并可取消。
-- **压缩与解压**：ZIP、7z、TAR、TAR.GZ/TGZ；ZIP 支持 AES-256 加密压缩，解压支持 ZipCrypto/AES ZIP 和带密码的 7z。ZIP 可直接进入浏览。详见[格式支持与密码说明](docs/archives.md)。
+- **压缩与解压**：ZIP、7z、TAR、TAR.GZ/TGZ；ZIP 支持 AES-256 加密压缩，解压支持 ZipCrypto/AES ZIP 和带密码的 7z。ZIP 可直接进入浏览；智能解压避免重复嵌套和文件散落。详见[格式支持与密码说明](docs/archives.md)。
 - **查看与打开**：图片缩放和切换、UTF-8/GBK 文本、Markdown 预览，以及可记住默认应用的“打开方式”。
 - **网络位置**：FTP、FTPS、SFTP、SMB 2/3、WebDAV；可在本地与网络位置间复制。密码用 Android Keystore 加密保存，SFTP 首次连接确认主机指纹。
 - **云盘**：Google Drive 和 OneDrive 原生授权客户端，接入双栏文件操作；Google Drive 已配置登录入口，OneDrive 待完成应用注册后启用。见[接入与配置](docs/cloud-drives.md)。

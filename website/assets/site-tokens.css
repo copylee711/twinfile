@@ -1,0 +1,67 @@
+:root {
+  color-scheme: light;
+
+  --bg: #fcfcfd;
+  --bg-tint: #eef2fb;
+  --surface: #ffffff;
+  --text: #111114;
+  --text-2: #4b5563;
+  --muted: #6b7280;
+  --faint: #9ca3af;
+  --line: rgba(17, 24, 39, 0.08);
+  --line-strong: rgba(17, 24, 39, 0.28);
+  --accent: #3b6ef5;
+  --accent-soft: rgba(59, 110, 245, 0.1);
+
+  --header-bg: rgba(252, 252, 253, 0.76);
+  --btn-bg: #1c1c20;
+  --btn-fg: #ffffff;
+  --mark: #e2e5ec;
+  --grid-line: rgba(59, 110, 245, 0.09);
+  /* 输入框聚焦：不用彩色亮线，边框与内环一起加深，外面一层柔和阴影 */
+  --field-focus-border: rgba(17, 24, 39, 0.3);
+  --field-focus-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.06), 0 6px 18px -10px rgba(17, 24, 39, 0.3);
+  --check-border: rgba(17, 24, 39, 0.26);
+
+  --radius: 16px;
+  --radius-sm: 12px;
+  --gutter: 24px;
+  --content: 1120px;
+  --header-h: 64px;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --scrollbar-thumb: var(--line-strong);
+  --scrollbar-track: transparent;
+  --scrollbar-hover: var(--muted);
+  --scrollbar-active: var(--accent);
+
+  /* Outfit 只含拉丁字符，中文回退到系统字体 */
+  --font: 'Outfit Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC',
+    'Microsoft YaHei', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0c0d10;
+  --bg-tint: #121829;
+  --surface: #14161b;
+  --text: #f3f4f6;
+  --text-2: #b6bcc8;
+  --muted: #9097a3;
+  --faint: #656c78;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.3);
+  --accent: #6d93ff;
+  --accent-soft: rgba(109, 147, 255, 0.16);
+
+  --header-bg: rgba(12, 13, 16, 0.72);
+  --btn-bg: #f3f4f6;
+  --btn-fg: #111114;
+  --mark: #1c1f27;
+  --grid-line: rgba(109, 147, 255, 0.1);
+  --field-focus-border: rgba(255, 255, 255, 0.32);
+  --field-focus-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 6px 18px -8px rgba(0, 0, 0, 0.65);
+  --check-border: rgba(255, 255, 255, 0.3);
+}

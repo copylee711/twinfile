@@ -305,7 +305,7 @@ class MainActivity : ComponentActivity() {
         override fun extract(pane: PaneState, e: FEntry, toOther: Boolean) {
             val zip = localFile(pane, e)
             val target = if (toOther && vm.other.source === vm.app.local) vm.other.path else pane.path
-            Ops.start("解压 ${e.name}", { job ->
+            Ops.start("智能解压 ${e.name}", { job ->
                 job.passwords.run(zip, { job.stats.cancelled }) { password -> Archive.extract(zip, File(target), job.stats, password) }
             }) {
                 runOnUiThread { vm.refreshShowing(vm.app.local, target) }
