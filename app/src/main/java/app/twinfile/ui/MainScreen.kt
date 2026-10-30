@@ -43,6 +43,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.ControlPointDuplicate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
@@ -104,7 +106,7 @@ sealed interface Dlg {
     data class Keyword(val pane: PaneState) : Dlg
     data class Props(val pane: PaneState, val entries: List<FEntry>) : Dlg
     data class Delete(val pane: PaneState, val entries: List<FEntry>) : Dlg
-    data class Menu(val pane: PaneState, val entries: List<FEntry>) : Dlg
+    data class Menu(val pane: PaneState, val entries: List<FEntry>, val locate: (() -> Unit)? = null) : Dlg
     data class Compress(val pane: PaneState, val entries: List<FEntry>) : Dlg
 }
 
@@ -132,7 +134,9 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
     BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
     BackHandler(!drawer.isOpen && active.selecting) { vm.clearSelection(active) }
     BackHandler(!drawer.isOpen && !active.selecting && active.filter.isNotEmpty()) { active.filter = "" }
-    BackHandler(!drawer.isOpen && !active.selecting && active.filter.isEmpty() && vm.canGoUp(active)) { vm.up(active) }
+    BackHandler(!drawer.isOpen && !active.recentView && !active.selecting && active.filter.isEmpty() && vm.canGoUp(active)) { vm.up(active) }
+
+    BackHandler(!drawer.isOpen && active.recentView) { active.recentView = false }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -157,18 +161,21 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         vm.panes.forEach { p ->
-                            PaneView(vm, p, vm.focus == p.index, onLong(p), { openFile(p, it) }, Modifier.weight(1f).fillMaxSize())
+                            if (p.recentView) RecentFilesPane(vm, p, openFile, fileActions, Modifier.weight(1f).fillMaxSize())
+                            else PaneView(vm, p, vm.focus == p.index, onLong(p), { openFile(p, it) }, Modifier.weight(1f).fillMaxSize())
                         }
                     }
                 } else {
                     // One pane: whichever had focus when switching; the other is simply not shown.
-                    PaneView(vm, active, true, onLong(active), { openFile(active, it) },
+                    if (active.recentView) RecentFilesPane(vm, active, openFile, fileActions,
+                        Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp))
+                    else PaneView(vm, active, true, onLong(active), { openFile(active, it) },
                         Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), showHeader = false)
                 }
                 OpsPanel()
-                vm.clip?.let { c -> if (!active.selecting) PasteBar(vm, c, active) }
+                vm.clip?.let { c -> if (!active.selecting && !active.recentView) PasteBar(vm, c, active) }
                 if (active.selecting) SelectionBar(vm, active, show = { dlg = it })
-                else BottomBar(vm, active, show = { dlg = it }, sheet = sheet)
+                else BottomBar(vm, active, show = { dlg = it }, sheet = sheet, recent = { vm.showRecent() })
             }
             BookmarkPanel(vm, sheet)
             SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 64.dp))
@@ -190,7 +197,7 @@ interface FileActions {
 }
 
 @Composable
-private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg) -> Unit, fileActions: FileActions) {
+fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg) -> Unit, fileActions: FileActions) {
     val context = LocalContext.current
     when (d) {
         is Dlg.NewItem -> InputDialog(
@@ -238,9 +245,10 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
             val p = d.pane
             val es = d.entries
             val single = es.singleOrNull()
-            val otherSame = vm.other.source === p.source && vm.other.path == p.path
+            val otherSame = vm.other.recentView || (vm.other.source === p.source && vm.other.path == p.path)
             val isLocal = p.source === vm.app.local
             val actions = buildList {
+                d.locate?.let { locate -> add(MenuAction("定位所在位置", Icons.Filled.MyLocation) { locate() }) }
                 if (vm.prefs.dualPane) {
                     add(MenuAction("复制 →", Icons.Filled.ContentCopy, !otherSame) { vm.transfer(p, es, move = false) })
                     add(MenuAction("移动 →", Icons.AutoMirrored.Filled.DriveFileMove, !otherSame) { vm.transfer(p, es, move = true) })
@@ -253,8 +261,8 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
                 add(MenuAction("重命名", Icons.Filled.DriveFileRenameOutline, single != null) { show(Dlg.Rename(p, single!!)) })
                 add(MenuAction("创建副本", Icons.Filled.ControlPointDuplicate) { vm.transfer(p, es, move = false, toSamePane = true) })
                 if (single != null && !single.isDir && app.twinfile.ops.Archive.format(single.name) != null) {
-                    if (vm.prefs.dualPane) add(MenuAction("智能解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
-                    add(MenuAction("智能解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
+                    if (vm.prefs.dualPane) add(MenuAction("解压 →", Icons.Filled.Unarchive, isLocal && !vm.other.recentView) { fileActions.extract(p, single, toOther = true) })
+                    add(MenuAction("解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
                 }
                 add(MenuAction("压缩", Icons.Filled.Archive, isLocal) { show(Dlg.Compress(p, es)) })
                 add(MenuAction("属性", Icons.Filled.Info) { show(Dlg.Props(p, es)) })
@@ -289,16 +297,21 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onMenu) { Icon(Icons.Filled.Menu, "菜单") }
         Column(Modifier.weight(1f).padding(vertical = 2.dp)) {
-            Breadcrumb(vm, pane, onLong = { show(Dlg.Jump(pane)) })
-            val dirs = pane.visible.count { it.isDir }
-            val files = pane.visible.size - dirs
-            val parts = buildList {
-                add("$dirs 个文件夹")
-                add("$files 个文件")
-                if (pane.selecting) add("已选 ${pane.selected.size}")
-                usage?.let { (u, t) -> if (t > 0) add("${Format.size(u)} / ${Format.size(t)}") }
+            if (pane.recentView) {
+                Text("最近文件", Modifier.padding(start = 6.dp, top = 3.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("本地文件聚合", Modifier.padding(start = 6.dp), fontSize = 12.sp, color = twin.muted)
+            } else {
+                Breadcrumb(vm, pane, onLong = { show(Dlg.Jump(pane)) })
+                val dirs = pane.visible.count { it.isDir }
+                val files = pane.visible.size - dirs
+                val parts = buildList {
+                    add("$dirs 个文件夹")
+                    add("$files 个文件")
+                    if (pane.selecting) add("已选 ${pane.selected.size}")
+                    usage?.let { (u, t) -> if (t > 0) add("${Format.size(u)} / ${Format.size(t)}") }
+                }
+                Text(parts.joinToString(" · "), Modifier.padding(start = 6.dp), fontSize = 12.sp, color = twin.muted, maxLines = 1)
             }
-            Text(parts.joinToString(" · "), Modifier.padding(start = 6.dp), fontSize = 12.sp, color = twin.muted, maxLines = 1)
         }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "更多") }
@@ -307,12 +320,15 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
                     DropdownMenuItem({ Text(label) }, { menu = false; action() })
                 }
                 item("刷新") { vm.refreshAll() }()
-                item("全选") { vm.selectAll(pane) }()
-                item("过滤") { show(Dlg.Filter(pane)) }()
-                item("排序方式") { show(Dlg.Sort(pane)) }()
-                item(if (vm.prefs.showHidden) "不显示隐藏文件" else "显示隐藏文件") { vm.prefs.update { showHidden = !showHidden } }()
-                item("添加书签") { vm.addBookmark(pane) }()
-                if (pane.source.phonePaths) item("设为首页") { vm.setHome(pane) }()
+                if (!pane.recentView) {
+                    item("全选") { vm.selectAll(pane) }()
+                    item("过滤") { show(Dlg.Filter(pane)) }()
+                    item("排序方式") { show(Dlg.Sort(pane)) }()
+                    item(if (vm.prefs.showHidden) "不显示隐藏文件" else "显示隐藏文件") { vm.prefs.update { showHidden = !showHidden } }()
+                    item("添加书签") { vm.addBookmark(pane) }()
+                    if (pane.source.phonePaths) item("设为首页") { vm.setHome(pane) }()
+                }
+                if (pane.recentView) item("返回目录") { pane.recentView = false }()
                 if (vm.prefs.dualPane) item("交换窗口") { vm.swapPanes() }()
                 item(if (vm.prefs.dualPane) "切换为单栏" else "切换为双栏") { vm.prefs.update { dualPane = !dualPane } }()
                 HorizontalDivider()
@@ -385,7 +401,7 @@ private fun BarButton(icon: ImageVector, label: String, enabled: Boolean = true,
 }
 
 @Composable
-private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, sheet: PullSheetState) {
+private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, sheet: PullSheetState, recent: () -> Unit) {
     // Dragging up pulls the bookmarks panel out with the finger.
     Column(
         Modifier.fillMaxWidth().draggable(
@@ -398,12 +414,12 @@ private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, s
         // Hint that the bar can be pulled up for bookmarks.
         Box(Modifier.padding(top = 4.dp).size(28.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(LocalTwin.current.muted.copy(alpha = 0.35f)))
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            BarButton(Icons.AutoMirrored.Filled.ArrowBack, "后退", pane.canBack) { vm.back(pane) }
-            BarButton(Icons.AutoMirrored.Filled.ArrowForward, "前进", pane.canForward) { vm.forward(pane) }
-            BarButton(Icons.Filled.Add, "新建") { show(Dlg.NewItem(pane)) }
+            BarButton(Icons.AutoMirrored.Filled.ArrowBack, "后退", pane.canBack || pane.recentView) { if (pane.recentView) pane.recentView = false else vm.back(pane) }
+            BarButton(Icons.AutoMirrored.Filled.ArrowForward, "前进", pane.canForward && !pane.recentView) { vm.forward(pane) }
+            BarButton(Icons.Filled.Add, "新建", !pane.recentView) { show(Dlg.NewItem(pane)) }
             if (vm.prefs.dualPane) BarButton(Icons.Filled.SwapHoriz, "同步到另一栏（长按交换）", onLong = { vm.swapPanes() }) { vm.syncOther() }
-            else BarButton(Icons.Filled.Refresh, "刷新") { vm.refresh(pane) }
-            BarButton(Icons.Filled.ArrowUpward, "上一级", vm.canGoUp(pane)) { vm.up(pane) }
+            else BarButton(Icons.Filled.Refresh, "刷新") { vm.refreshAll() }
+            BarButton(Icons.Filled.History, "最近文件") { recent() }
         }
     }
 }
@@ -412,7 +428,7 @@ private fun BottomBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit, s
 private fun SelectionBar(vm: MainViewModel, pane: PaneState, show: (Dlg) -> Unit) {
     var more by remember { mutableStateOf(false) }
     val dual = vm.prefs.dualPane
-    val otherSame = vm.other.source === pane.source && vm.other.path == pane.path
+    val otherSame = vm.other.recentView || (vm.other.source === pane.source && vm.other.path == pane.path)
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         // Two panes: straight to the other one. One pane: onto the clipboard, paste anywhere.
         if (dual) {

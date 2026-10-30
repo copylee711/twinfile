@@ -230,10 +230,6 @@ class MainActivity : ComponentActivity() {
                         onSaved = { vm.refreshShowing(v.source, app.twinfile.fs.Paths.parent(v.path) ?: "/"); vm.say("已保存") })
                     null -> {}
                 }
-                vm.openRequest?.let { req ->
-                    OpenWithDialog(req, setDefault = { k, c -> vm.prefs.update { openers[k] = c.flattenToString() } },
-                        close = { vm.openRequest = null })
-                }
             }
             Screen.TRASH -> TrashScreen(vm, back)
             Screen.SETTINGS -> SettingsScreen(vm, back)
@@ -255,6 +251,10 @@ class MainActivity : ComponentActivity() {
                 screen = Screen.MAIN
                 vm.openSource(vm.active, pc.sourceId)
             }
+        }
+        vm.openRequest?.let { req ->
+            OpenWithDialog(req, setDefault = { k, c -> vm.prefs.update { openers[k] = c.flattenToString() } },
+                close = { vm.openRequest = null })
         }
     }
 
@@ -303,6 +303,7 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun extract(pane: PaneState, e: FEntry, toOther: Boolean) {
+            if (toOther && vm.other.recentView) { vm.say("请先在目标栏打开文件夹"); return }
             val zip = localFile(pane, e)
             val target = if (toOther && vm.other.source === vm.app.local) vm.other.path else pane.path
             Ops.start("智能解压 ${e.name}", { job ->

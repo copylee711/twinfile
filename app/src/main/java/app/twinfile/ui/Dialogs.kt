@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -340,8 +344,14 @@ fun ItemMenu(
         onDismissRequest = onDismiss,
         title = { Text(title, maxLines = 2, fontSize = 17.sp) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                actions.chunked(2).forEach { row ->
+            BoxWithConstraints {
+            val density = LocalDensity.current
+            val measurer = rememberTextMeasurer()
+            val textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp)
+            val needed = actions.maxOfOrNull { measurer.measure(AnnotatedString(it.label), textStyle).size.width } ?: 0
+            val columns = if (with(density) { maxWidth.toPx() } >= 2 * (needed + with(density) { 38.dp.toPx() })) 2 else 1
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                actions.chunked(columns).forEach { row ->
                     Row {
                         row.forEach { a ->
                             Row(
@@ -352,12 +362,13 @@ fun ItemMenu(
                                 val color = if (a.enabled) MaterialTheme.colorScheme.onSurface else LocalTwin.current.muted.copy(alpha = 0.5f)
                                 Icon(a.icon, null, Modifier.size(20.dp), tint = if (a.enabled) MaterialTheme.colorScheme.primary else color)
                                 Spacer(Modifier.width(10.dp))
-                                Text(a.label, color = color, fontSize = 15.sp)
+                                Text(a.label, color = color, style = textStyle, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                         }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                        if (columns == 2 && row.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+            }
             }
         },
         confirmButton = {},

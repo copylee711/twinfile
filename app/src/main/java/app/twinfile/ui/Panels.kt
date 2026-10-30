@@ -1,5 +1,7 @@
 package app.twinfile.ui
 
+import java.io.File
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.Orientation
@@ -32,12 +34,21 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
@@ -46,12 +57,17 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -101,6 +117,7 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
     ModalDrawerSheet(Modifier.width(300.dp)) {
         Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
             Text("TwinFile", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            QuickBookmarks(vm, close)
             Section("本地")
             volumes.forEach { v ->
                 VolumeRow(if (v.removable) Icons.Filled.SdCard else Icons.Filled.PhoneAndroid, v.name, v.total, v.free) {
@@ -158,15 +175,88 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                 }
             }
             Section("工具")
-            DrawerItem(Icons.Filled.Lan, "云盘") { close(); navigate(Screen.CLOUD) }
+            DrawerItem(Icons.Filled.Cloud, "云盘") { close(); navigate(Screen.CLOUD) }
             DrawerItem(Icons.Filled.Lan, "网络位置") { close(); navigate(Screen.NETWORK) }
             DrawerItem(Icons.Filled.Computer, "电脑") { close(); navigate(Screen.PC) }
+            DrawerItem(Icons.Filled.History, "最近文件") { vm.showRecent(); close() }
             DrawerItem(Icons.Filled.DeleteOutline, "回收站") { close(); navigate(Screen.TRASH) }
             DrawerItem(Icons.Filled.Apps, "已安装应用") { close(); navigate(Screen.APPS) }
             DrawerItem(Icons.Filled.Settings, "设置") { close(); navigate(Screen.SETTINGS) }
             Spacer(Modifier.height(8.dp))
             Text("开源 · MIT", Modifier.padding(horizontal = 20.dp), fontSize = 12.sp, color = twin.muted)
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun QuickBookmarks(vm: MainViewModel, close: () -> Unit) {
+    val root = Volumes.internalPath()
+    val common = listOf(
+        Bookmark("下载", "local", "$root/Download") to Icons.Filled.Download,
+        Bookmark("文档", "local", "$root/Documents") to Icons.Filled.Description,
+        Bookmark("相机", "local", "$root/DCIM") to Icons.Filled.PhotoCamera,
+        Bookmark("图片", "local", "$root/Pictures") to Icons.Filled.Image,
+        Bookmark("音乐", "local", "$root/Music") to Icons.Filled.MusicNote,
+        Bookmark("视频", "local", "$root/Movies") to Icons.Filled.Movie,
+    )
+    var editing by remember { mutableStateOf<Bookmark?>(null) }
+    var value by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val configured = common.map { (b, icon) -> b.copy(path = vm.prefs.quickPaths[Paths.name(b.path)] ?: b.path) to icon }
+    val extras = vm.prefs.bookmarks.filter { b -> configured.none { it.first.source == b.source && it.first.path == b.path } }
+        .map { it to Icons.Filled.Bookmark }
+    val all = configured + extras
+    LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        itemsIndexed(all) { index, (bookmark, icon) ->
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).combinedClickable(
+                onClickLabel = bookmark.name,
+                onClick = { vm.openBookmark(vm.active, bookmark.source, bookmark.path); close() },
+                onLongClickLabel = if (index < common.size) "自定义路径" else bookmark.name,
+                onLongClick = {
+                    if (index < common.size) {
+                        editing = common[index].first; value = bookmark.path; error = null
+                    } else vm.say(bookmark.name)
+                }), contentAlignment = Alignment.Center) {
+                Icon(icon, bookmark.name, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    editing?.let { slot ->
+        val key = Paths.name(slot.path)
+        fun dismiss() { if (!saving) editing = null }
+        AlertDialog(onDismissRequest = ::dismiss, title = { Text("${slot.name} · 快捷路径") },
+            text = {
+                Column {
+                    Text("设置此图标对应的本地目录", fontSize = 13.sp)
+                    androidx.compose.material3.OutlinedTextField(value, { value = it; error = null },
+                        label = { Text("目录路径") }, singleLine = true, enabled = !saving,
+                        isError = error != null, modifier = Modifier.fillMaxWidth())
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+            }, dismissButton = {
+                androidx.compose.material3.TextButton({
+                    vm.prefs.update { quickPaths.remove(key) }; editing = null
+                }, enabled = !saving) { Text("恢复默认") }
+            }, confirmButton = {
+                Row {
+                    androidx.compose.material3.TextButton(::dismiss, enabled = !saving) { Text("取消") }
+                    androidx.compose.material3.TextButton({
+                        val raw = value.trim().replace('／', '/').replace('\\', '/')
+                        saving = true
+                        scope.launch {
+                            val path = withContext(Dispatchers.IO) {
+                                runCatching { File(raw).takeIf { it.isAbsolute }?.canonicalFile?.takeIf { it.isDirectory && it.canRead() }?.path }.getOrNull()
+                            }
+                            saving = false
+                            if (path == null) error = "请输入可读取目录的绝对路径"
+                            else { vm.prefs.update { quickPaths[key] = path }; editing = null }
+                        }
+                    }, enabled = !saving && value.isNotBlank()) { Text(if (saving) "检查中…" else "保存") }
+                }
+            })
     }
 }
 

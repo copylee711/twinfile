@@ -158,6 +158,9 @@ fun SettingsScreen(vm: MainViewModel, back: () -> Unit) {
             Toggle("双栏", "竖屏左右两栏；关闭后只显示一栏", p.dualPane) { p.update { dualPane = it } }
             Toggle("紧凑列表", "更小的图标和行距", p.compact) { p.update { compact = it } }
             Toggle("文件夹切换动画", "进入、返回文件夹时列表滑入", p.animateNav) { p.update { animateNav = it } }
+            Toggle("恢复目录滚动位置", "返回目录时恢复离开前的位置；关闭后回到顶部", p.restoreScroll) { p.update { restoreScroll = it } }
+            Toggle("固定上级目录入口", "滚动列表时，让「..」保持在顶部", p.stickyParent) { p.update { stickyParent = it } }
+            Toggle("记录打开的文件", "仅在本机保存最多 200 条本地文件打开记录", p.recordOpened) { p.update { recordOpened = it } }
             Toggle("显示隐藏文件", "以 . 开头的文件和文件夹", p.showHidden) { p.update { showHidden = it } }
             Group("文件操作")
             Item("默认打开方式", if (p.openers.isEmpty()) "未设置；打开文件时勾选「始终用此应用打开」"

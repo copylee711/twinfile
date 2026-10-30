@@ -27,6 +27,10 @@ class Prefs(dir: File) {
     var compact by mutableStateOf(false)
     /** Slide the list in when entering or leaving a folder. */
     var animateNav by mutableStateOf(true)
+    var restoreScroll by mutableStateOf(true)
+    var stickyParent by mutableStateOf(true)
+    var recordOpened by mutableStateOf(true)
+    var recentHintShown by mutableStateOf(false)
     /** Bookmarks section in the drawer expanded. */
     var drawerBookmarks by mutableStateOf(true)
     /** Look for a new release on GitHub at startup. */
@@ -44,9 +48,11 @@ class Prefs(dir: File) {
     /** Per-folder sort overrides, keyed by "source:path". */
     val folderSort = HashMap<String, SortSpec>()
     val bookmarks = mutableStateListOf<Bookmark>()
+    val quickPaths = androidx.compose.runtime.mutableStateMapOf<String, String>()
     /** Default app per file extension (or MIME type), as flattened ComponentNames. */
     val openers = androidx.compose.runtime.mutableStateMapOf<String, String>()
     val recent = mutableStateListOf<Recent>()
+    val openedFiles = mutableStateListOf<Recent>()
 
     init {
         val j = store.load()
@@ -56,6 +62,10 @@ class Prefs(dir: File) {
         showHidden = j.optBoolean("showHidden", false)
         compact = j.optBoolean("compact", false)
         animateNav = j.optBoolean("animateNav", true)
+        restoreScroll = j.optBoolean("restoreScroll", true)
+        stickyParent = j.optBoolean("stickyParent", true)
+        recordOpened = j.optBoolean("recordOpened", true)
+        recentHintShown = j.optBoolean("recentHintShown", false)
         drawerBookmarks = j.optBoolean("drawerBookmarks", true)
         autoUpdate = j.optBoolean("autoUpdate", true)
         privMode = j.optString("privMode", "OFF")
@@ -68,13 +78,18 @@ class Prefs(dir: File) {
         sortLeft = sortOf(j.optJSONObject("sortLeft"))
         sortRight = sortOf(j.optJSONObject("sortRight"))
         j.optJSONObject("folderSort")?.let { o -> o.keys().forEach { k -> folderSort[k] = sortOf(o.optJSONObject(k)) } }
+        j.optJSONObject("quickPaths")?.let { o -> o.keys().forEach { k -> quickPaths[k] = o.optString(k) } }
         j.optJSONObject("openers")?.let { o -> o.keys().forEach { k -> openers[k] = o.optString(k) } }
         j.optJSONArray("bookmarks")?.forEachObj {
             bookmarks += Bookmark(it.optString("name"), it.optString("source", "local"), it.optString("path"))
         }
+        j.optJSONArray("openedFiles")?.forEachObj {
+            openedFiles += Recent(it.optString("source", "local"), it.optString("path"), false, it.optLong("time"))
+        }
         j.optJSONArray("recent")?.forEachObj {
             recent += Recent(it.optString("source", "local"), it.optString("path"), it.optBoolean("dir", true), it.optLong("time"))
         }
+        if (!j.has("openedFiles") && recordOpened) openedFiles.addAll(recent.filter { !it.isDir && it.source == "local" })
     }
 
     /** Snapshots state on the caller's thread and writes it on a background thread. */
@@ -86,12 +101,15 @@ class Prefs(dir: File) {
     private fun snapshot(): JSONObject {
         return JSONObject()
             .put("dualPane", dualPane).put("palette", palette).put("darkMode", darkMode).put("showHidden", showHidden).put("compact", compact).put("animateNav", animateNav)
+            .put("restoreScroll", restoreScroll).put("stickyParent", stickyParent).put("recordOpened", recordOpened).put("recentHintShown", recentHintShown)
+            .put("openedFiles", JSONArray().also { a -> openedFiles.forEach { a.put(JSONObject().put("source", it.source).put("path", it.path).put("time", it.time)) } })
             .put("drawerBookmarks", drawerBookmarks).put("autoUpdate", autoUpdate).put("privMode", privMode)
             .put("trashEnabled", trashEnabled).put("trashByDefault", trashByDefault)
             .put("trashAutoCleanDays", trashAutoCleanDays).put("keepMtime", keepMtime)
             .put("homeLeft", homeLeft).put("homeRight", homeRight)
             .put("sortLeft", sortJson(sortLeft)).put("sortRight", sortJson(sortRight))
             .put("folderSort", JSONObject().also { o -> folderSort.forEach { (k, v) -> o.put(k, sortJson(v)) } })
+            .put("quickPaths", JSONObject().also { o -> quickPaths.forEach { (k, v) -> o.put(k, v) } })
             .put("openers", JSONObject().also { o -> openers.forEach { (k, v) -> o.put(k, v) } })
             .put("bookmarks", JSONArray().also { a ->
                 bookmarks.forEach { a.put(JSONObject().put("name", it.name).put("source", it.source).put("path", it.path)) }
@@ -108,6 +126,12 @@ class Prefs(dir: File) {
     }
 
     fun addRecent(source: String, path: String, isDir: Boolean) {
+        if (!isDir && !recordOpened) return
+        if (!isDir && source == "local" && recordOpened) {
+            openedFiles.removeAll { it.source == source && it.path == path }
+            openedFiles.add(0, Recent(source, path, false, System.currentTimeMillis()))
+            while (openedFiles.size > 200) openedFiles.removeAt(openedFiles.lastIndex)
+        }
         recent.removeAll { it.source == source && it.path == path }
         recent.add(0, Recent(source, path, isDir, System.currentTimeMillis()))
         while (recent.size > MAX_RECENT) recent.removeAt(recent.size - 1)

@@ -162,11 +162,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- navigation ----
 
-    fun open(pane: PaneState, path: String, requested: FileSource = pane.source, push: Boolean = true) {
+    fun open(pane: PaneState, path: String, requested: FileSource = pane.source, push: Boolean = true, afterLoad: (() -> Unit)? = null) {
+        pane.recentView = false
         val source = route(requested, path)
         val target = Loc(source.id, path)
         if (pane.path.isNotEmpty()) {
-            pane.scrollMemory[pane.loc] = pane.listState.firstVisibleItemIndex to pane.listState.firstVisibleItemScrollOffset
+            val state = pane.listState
+            pane.scrollMemory.save(pane.loc, ScrollPosition(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset,
+                state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == state.firstVisibleItemIndex }?.key as? String))
             if (push && target != pane.loc) {
                 pane.back.addLast(pane.loc)
                 pane.forward.clear()
@@ -179,9 +182,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pane.source = source
         pane.path = path
         pane.selected = emptySet()
-        if (!sameFolder) pane.filter = ""
+        if (!sameFolder) { pane.filter = ""; pane.raw = emptyList(); pane.error = null }
         pane.sort = sortFor(pane)
-        load(pane, restore = pane.scrollMemory[target] ?: (0 to 0), keepScroll = sameFolder)
+        load(pane, keepScroll = sameFolder, afterLoad = afterLoad)
     }
 
     /**
@@ -266,7 +269,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun load(pane: PaneState, restore: Pair<Int, Int>, keepScroll: Boolean) {
+    private fun load(pane: PaneState, keepScroll: Boolean, afterLoad: (() -> Unit)? = null) {
         val gen = ++pane.loadGen
         val source = pane.source
         val path = pane.path
@@ -288,12 +291,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 else null
                 val reveal = pane.reveal?.let { n -> pane.visible.indexOfFirst { e -> e.pathName == n } }?.takeIf { i -> i >= 0 }
                 pane.reveal = null
-                if (reveal != null) pane.listState.scrollToItem(maxOf(0, reveal - 3))
-                if (!keepScroll) {
-                    if (reveal == null) pane.listState.scrollToItem(restore.first, restore.second)
-                    pane.navDir = pane.pendingDir
-                    pane.navTick++
+                if (!keepScroll || reveal != null) {
+                    val keys = buildList {
+                        if (canGoUp(pane)) add(PARENT_KEY)
+                        addAll(pane.visible.map { e -> e.pathName })
+                    }
+                    val position = if (reveal != null) ScrollPosition(maxOf(0, reveal + (if (canGoUp(pane)) 1 else 0) - 3))
+                        else pane.scrollMemory.restore(pane.loc, keys, prefs.restoreScroll)
+                    // A fresh state is attached with the new listing. Reusing the old list can
+                    // let Compose's previous row-key anchor undo an imperative scrollToItem.
+                    pane.listState = androidx.compose.foundation.lazy.LazyListState(position.index, position.offset)
                 }
+                if (!keepScroll) { pane.navDir = pane.pendingDir; pane.navTick++ }
+                afterLoad?.invoke()
             }.onFailure {
                 if (!keepScroll) { pane.navDir = pane.pendingDir; pane.navTick++ }
                 FileLog.w("list $path", it)
@@ -303,7 +313,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refresh(pane: PaneState) = load(pane, 0 to 0, keepScroll = true)
+    fun refresh(pane: PaneState) = load(pane, keepScroll = true)
 
     /** Reloads every pane that shows [dir] (after an operation changed it). */
     fun refreshShowing(source: FileSource, vararg dirs: String) {
@@ -322,7 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val container = pane.source.container
         if (pane.path == "/" && container != null) {
             // Leave the archive to the folder that holds it.
-            pane.reveal = Paths.name(container)
+            pane.reveal = null
             open(pane, Paths.parent(container) ?: "/", app.local)
             pane.flash = Paths.name(container)
             pane.flashTick++
@@ -331,8 +341,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val parent = Paths.parent(pane.path) ?: return
         val from = Paths.name(pane.path)
         // Land on the folder we came from.
-        pane.reveal = from
+        pane.reveal = null
         open(pane, parent)
+        if (prefs.restoreScroll) { pane.flash = from; pane.flashTick++ }
     }
 
     fun back(pane: PaneState) {
@@ -355,15 +366,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** The other pane jumps to this pane's folder. */
+    fun showRecent(pane: PaneState = active) {
+        pane.selected = emptySet()
+        pane.recentView = true
+        if (!prefs.recentHintShown) {
+            prefs.update { recentHintShown = true }
+            say("仅聚合可读取的本地公共文件，不包含受限目录和回收站")
+        }
+    }
+
     fun syncOther() {
+        if (active.recentView) { showRecent(other); return }
         open(other, active.path, active.source)
     }
 
     fun swapPanes() {
+        val aRecent = panes[0].recentView
+        val bRecent = panes[1].recentView
         val a = panes[0].loc
         val b = panes[1].loc
         go(panes[0], b)
         go(panes[1], a)
+        panes[0].recentView = bRecent
+        panes[1].recentView = aRecent
     }
 
     fun enter(pane: PaneState, e: FEntry) {
@@ -445,6 +470,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             out += src.label(cur) to cur
         }
         return out
+    }
+
+    /** Recent-file actions use the real directory and source, never a virtual mixed path. */
+    fun openRecentFile(path: String, pane: PaneState = active, then: ((PaneState, FEntry) -> Unit)? = null) {
+        io("文件不可用") {
+            val entry = app.local.stat(path)?.takeUnless { it.isDir } ?: throw FsException("文件已移动或删除")
+            withContext(Dispatchers.Main) {
+                focus = pane.index
+                pane.reveal = Paths.name(path)
+                open(pane, Paths.parent(path) ?: "/", app.local, afterLoad = { then?.invoke(pane, entry) })
+                pane.flash = entry.pathName; pane.flashTick++
+                locateTick++
+            }
+        }
     }
 
     // ---- sorting ----
@@ -602,6 +641,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Copies or moves [entries] of [from] into the other pane's folder. */
     fun transfer(from: PaneState, entries: List<FEntry>, move: Boolean, toSamePane: Boolean = false) {
         val to = if (toSamePane) from else panes[1 - from.index]
+        if (to.recentView) return say("请先在目标栏打开文件夹")
         if (!toSamePane && from.source === to.source && from.path == to.path && move) return say("两个窗口是同一个文件夹")
         from.selected = emptySet()
         runTransfer(from.source, from.path, entries, to.source, to.path, move)
@@ -630,6 +670,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun paste(pane: PaneState) {
+        if (pane.recentView) return say("请先打开目标文件夹")
         val c = clip ?: return
         if (c.source === pane.source && c.dir == pane.path) {
             if (c.move) return say("文件已在这个文件夹")

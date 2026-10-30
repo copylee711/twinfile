@@ -16,6 +16,10 @@ data class Loc(val source: String, val path: String)
 
 /** Everything one pane shows; all fields are Compose state. */
 class PaneState(val index: Int, source: FileSource, private val showHidden: () -> Boolean) {
+    var recentView by mutableStateOf(false)
+    var recentOpened by mutableStateOf(false)
+    val recentModifiedList = LazyListState()
+    val recentOpenedList = LazyListState()
     var source by mutableStateOf(source)
     var path by mutableStateOf("")
     var raw by mutableStateOf<List<FEntry>>(emptyList())
@@ -24,13 +28,13 @@ class PaneState(val index: Int, source: FileSource, private val showHidden: () -
     var sort by mutableStateOf(SortSpec())
     var filter by mutableStateOf("")
     var selected by mutableStateOf<Set<String>>(emptySet())
-    val listState = LazyListState()
+    var listState by mutableStateOf(LazyListState())
 
     internal val back = ArrayDeque<Loc>()
     internal val forward = ArrayDeque<Loc>()
     /** Bumped whenever the history stacks change, so buttons recompose. */
     var historyVersion by mutableIntStateOf(0)
-    internal val scrollMemory = HashMap<Loc, Pair<Int, Int>>()
+    internal val scrollMemory = PaneScrollMemory()
     internal var loadGen = 0
     /** Bumped when a different folder's listing lands; drives the slide-in animation. */
     var navTick by mutableIntStateOf(0)

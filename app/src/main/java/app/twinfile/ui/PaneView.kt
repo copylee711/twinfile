@@ -121,9 +121,13 @@ fun PaneView(
                     },
             ) {
                 if (showParent) {
-                    item(key = PARENT_KEY) {
-                        ParentRow(compact) { vm.focus = pane.index; vm.up(pane) }
+                    val parentContent: @Composable () -> Unit = {
+                        Box(Modifier.fillMaxWidth().background(if (focused) twin.paneFocused else twin.pane)) {
+                            ParentRow(compact) { vm.focus = pane.index; vm.up(pane) }
+                        }
                     }
+                    if (vm.prefs.stickyParent) stickyHeader(key = PARENT_KEY) { parentContent() }
+                    else item(key = PARENT_KEY) { parentContent() }
                 }
                 items(rows, key = { it.pathName }) { e ->
                     FileRow(
