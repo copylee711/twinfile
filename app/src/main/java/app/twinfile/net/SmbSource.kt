@@ -38,10 +38,12 @@ class SmbSource(config: NetConfig) : NetSource<SmbSource.Conn>(config, maxConnec
 
     override val caps = setOf(Cap.SERVER_MOVE, Cap.MTIME)
 
-    private val defaultShare get() = Paths.normalize(config.path).trim('/').substringBefore('/')
+    private val defaultShare get() = smbPath(config.path).trim('/').substringBefore('/')
 
     override fun roots() = listOf(Root(config.display, home()))
-    override fun home(): String = Paths.normalize(config.path.ifBlank { "/" }).let { if (it == "/" && defaultShare.isNotEmpty()) "/$defaultShare" else it }
+    override fun home(): String = smbPath(config.path)
+
+    private fun smbPath(path: String) = Paths.normalize(path.replace('\\', '/').ifBlank { "/" })
 
     override fun connect(): Conn {
         val cfg = SmbConfig.builder()
@@ -49,14 +51,19 @@ class SmbSource(config: NetConfig) : NetSource<SmbSource.Conn>(config, maxConnec
             .withSoTimeout(30, TimeUnit.SECONDS)
             .build()
         val client = SMBClient(cfg)
-        val conn = client.connect(config.host, config.port)
-        val auth = if (config.user.isBlank()) AuthenticationContext.anonymous()
+        val conn = try { client.connect(config.host, config.port) }
+        catch (e: Exception) { runCatching { client.close() }; throw e }
+        // NAS/Windows public shares normally use Guest, not an SMB null session.
+        // Null sessions may lack the key SMB3 session setup needs in SMBJ.
+        val auth = if (config.user.isBlank()) AuthenticationContext.guest()
         else AuthenticationContext(config.user, config.password.toCharArray(), config.domain.ifBlank { null })
         val session = try {
             conn.authenticate(auth)
-        } catch (e: SMBApiException) {
+        } catch (e: Exception) {
             runCatching { conn.close() }
-            throw FsException("登录失败：${status(e)}", e)
+            runCatching { client.close() }
+            if (e is SMBApiException) throw FsException("登录失败：${status(e)}", e)
+            throw e
         }
         return Conn(client, conn, session)
     }
@@ -72,7 +79,7 @@ class SmbSource(config: NetConfig) : NetSource<SmbSource.Conn>(config, maxConnec
 
     /** Splits "/share/a/b" into the share and "a\b". */
     private fun split(path: String): Pair<String, String> {
-        val p = Paths.normalize(path).trim('/')
+        val p = smbPath(path).trim('/')
         if (p.isEmpty()) throw FsException("请在路径中填写共享名，例如 /share")
         val share = p.substringBefore('/')
         val rest = if ('/' in p) p.substringAfter('/').replace('/', '\\') else ""
@@ -84,8 +91,14 @@ class SmbSource(config: NetConfig) : NetSource<SmbSource.Conn>(config, maxConnec
             ?: throw FsException("$name 不是磁盘共享")).also { c.shares[name] = it }
 
     override fun list(dir: String): List<FEntry> {
-        if (Paths.normalize(dir) == "/") {
-            return if (defaultShare.isNotEmpty()) listOf(FEntry(defaultShare, true, -1, 0)) else emptyList()
+        if (smbPath(dir) == "/") {
+            if (defaultShare.isEmpty()) throw FsException("请填写共享路径，例如 /share；暂不支持自动发现共享")
+            // This virtual parent is reachable through breadcrumbs. Validate the share before
+            // reporting success, just as listing an ordinary directory does.
+            return call { c ->
+                share(c, defaultShare).list("")
+                listOf(FEntry(defaultShare, true, -1, 0))
+            }
         }
         val (s, p) = split(dir)
         return call { c ->

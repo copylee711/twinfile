@@ -20,8 +20,12 @@ kxml = "2.3.0"
 orgJson = "20240303"
 commonmark = "0.24.0"
 shizuku = "13.1.5"
+zip4j = "2.11.5"
 
 [libraries]
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version = "1.28.0" }
+xz = { group = "org.tukaani", name = "xz", version = "1.10" }
+zip4j = { group = "net.lingala.zip4j", name = "zip4j", version.ref = "zip4j" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

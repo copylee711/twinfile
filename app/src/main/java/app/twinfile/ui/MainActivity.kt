@@ -38,6 +38,7 @@ import androidx.core.content.ContextCompat
 import app.twinfile.fs.FEntry
 import app.twinfile.ops.Archive
 import app.twinfile.ops.Ops
+import app.twinfile.ops.ArchiveFormat
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -76,6 +77,9 @@ class MainActivity : ComponentActivity() {
                 if (!granted) PermissionScreen(::requestStorage)
                 else AppNav()
                 vm.update?.let { UpdateDialog(vm, it) }
+                val passwordRequest = Ops.jobs.firstNotNullOfOrNull { it.passwords.request }
+                    ?: vm.archivePasswords.request
+                passwordRequest?.let { ArchivePasswordDialog(it) }
                 androidx.compose.runtime.LaunchedEffect(vm.syncBoardApproval) {
                     if (vm.syncBoardApproval != null) {
                         try {
@@ -193,6 +197,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openFile(pane: PaneState, e: FEntry) {
+        val format = Archive.format(e.name)
+        if (!e.isDir && pane.source === vm.app.local && format != null && format != ArchiveFormat.ZIP) {
+            actions.extract(pane, e, false)
+            return
+        }
         vm.openFile(pane, e) { f -> openExternal(f, choose = false) }
     }
 
@@ -217,13 +226,16 @@ class MainActivity : ComponentActivity() {
             Opener.share(this@MainActivity, entries.map { localFile(pane, it) })
         }
 
-        override fun compress(pane: PaneState, entries: List<FEntry>, name: String) {
-            val n = name.trim().let { if (it.endsWith(".zip", true)) it else "$it.zip" }
-            if ('/' in n) return vm.say("名称无效")
+        override fun compress(pane: PaneState, entries: List<FEntry>, name: String, format: ArchiveFormat, password: CharArray?) {
+            val n = name.trim()
+            if (n.isEmpty() || '/' in n || '\\' in n) { password?.fill('\u0000'); return vm.say("名称无效") }
             val dir = pane.path
             val files = entries.map { localFile(pane, it) }
             pane.selected = emptySet()
-            Ops.start("压缩为 $n", { job -> Archive.compress(files, File(dir, n), job.stats) }) {
+            Ops.start("压缩为 $n", { job ->
+                try { Archive.compress(files, File(dir, n), job.stats, format, password) }
+                finally { password?.fill('\u0000') }
+            }) {
                 runOnUiThread { vm.refreshShowing(vm.app.local, dir) }
             }
         }
@@ -231,7 +243,9 @@ class MainActivity : ComponentActivity() {
         override fun extract(pane: PaneState, e: FEntry, toOther: Boolean) {
             val zip = localFile(pane, e)
             val target = if (toOther && vm.other.source === vm.app.local) vm.other.path else pane.path
-            Ops.start("解压 ${e.name}", { job -> Archive.extract(zip, File(target), job.stats) }) {
+            Ops.start("解压 ${e.name}", { job ->
+                job.passwords.run(zip, { job.stats.cancelled }) { password -> Archive.extract(zip, File(target), job.stats, password) }
+            }) {
                 runOnUiThread { vm.refreshShowing(vm.app.local, target) }
             }
         }

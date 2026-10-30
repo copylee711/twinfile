@@ -185,7 +185,7 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
 interface FileActions {
     fun openWith(pane: PaneState, e: FEntry)
     fun share(pane: PaneState, entries: List<FEntry>)
-    fun compress(pane: PaneState, entries: List<FEntry>, name: String)
+    fun compress(pane: PaneState, entries: List<FEntry>, name: String, format: app.twinfile.ops.ArchiveFormat, password: CharArray?)
     fun extract(pane: PaneState, e: FEntry, toOther: Boolean)
 }
 
@@ -230,12 +230,9 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
         is Dlg.Delete -> DeleteDialog(
             d.entries.size, d.entries.first().name, vm.canTrash(d.pane), vm.prefs.trashByDefault, close,
         ) { toTrash -> vm.delete(d.pane, d.entries, toTrash); close() }
-        is Dlg.Compress -> InputDialog(
-            "压缩为 ZIP",
-            (if (d.entries.size == 1) d.entries[0].name.substringBeforeLast('.').ifEmpty { d.entries[0].name } else Paths.name(d.pane.path)) + ".zip",
-            selectStem = true, onDismiss = close,
-            buttons = listOf("压缩" to { n: String -> fileActions.compress(d.pane, d.entries, n); close() }),
-        )
+        is Dlg.Compress -> CreateArchiveDialog(
+            (if (d.entries.size == 1) d.entries[0].name.substringBeforeLast('.').ifEmpty { d.entries[0].name } else Paths.name(d.pane.path)).ifEmpty { "压缩文件" }, close,
+        ) { name, format, password -> fileActions.compress(d.pane, d.entries, name, format, password); close() }
         is Dlg.Menu -> {
             val p = d.pane
             val es = d.entries
@@ -254,7 +251,7 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
                 add(MenuAction("删除", Icons.Filled.Delete) { show(Dlg.Delete(p, es)) })
                 add(MenuAction("重命名", Icons.Filled.DriveFileRenameOutline, single != null) { show(Dlg.Rename(p, single!!)) })
                 add(MenuAction("创建副本", Icons.Filled.ControlPointDuplicate) { vm.transfer(p, es, move = false, toSamePane = true) })
-                if (single != null && !single.isDir && Paths.extension(single.name) in setOf("zip", "apks", "jar")) {
+                if (single != null && !single.isDir && app.twinfile.ops.Archive.format(single.name) != null) {
                     if (vm.prefs.dualPane) add(MenuAction("解压到 →", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = true) })
                     add(MenuAction("解压到此处", Icons.Filled.Unarchive, isLocal) { fileActions.extract(p, single, toOther = false) })
                 }

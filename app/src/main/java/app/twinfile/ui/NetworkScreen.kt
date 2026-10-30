@@ -83,7 +83,7 @@ fun NetworkScreen(vm: MainViewModel, back: () -> Unit, openIn: (NetConfig) -> Un
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(c.display, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${c.type.label} · ${c.user.ifBlank { "匿名" }}@${c.host}:${c.port}${c.path}",
+                        Text("${c.type.label} · ${c.user.ifBlank { if (c.type == NetType.SMB) "访客" else "匿名" }}@${c.host}:${c.port}${c.path}",
                             fontSize = 12.sp, color = LocalTwin.current.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     TextButton({ editing = c }) { Text("编辑") }
@@ -132,12 +132,16 @@ private fun NetEditor(vm: MainViewModel, initial: NetConfig?, close: () -> Unit)
         id = initial?.id ?: java.util.UUID.randomUUID().toString(),
         type = type, name = name.trim(), host = host.trim(),
         port = port.toIntOrNull() ?: if (type == NetType.FTPS && tls) 990 else if (type == NetType.WEBDAV && tls) 443 else type.defaultPort,
-        user = user.trim(), password = password, path = path.trim().ifEmpty { "/" }.let { if (it.startsWith("/")) it else "/$it" },
+        user = user.trim(), password = password, path = path.trim().replace('\\', '/').ifEmpty { "/" }.let { if (it.startsWith("/")) it else "/$it" },
         encoding = encoding, tls = tls, trustAll = trustAll, keyFile = keyFile.trim(), hostKey = hostKey, domain = domain.trim(),
     )
 
     fun test(then: (() -> Unit)? = null) {
         if (host.isBlank()) { status = "请填写主机地址"; return }
+        if (type == NetType.SMB && app.twinfile.fs.Paths.normalize(build().path) == "/") {
+            status = "连接失败：请填写共享路径，例如 /share；暂不支持自动发现共享"
+            return
+        }
         testing = true
         status = "正在连接…"
         val cfg = build()
@@ -174,15 +178,17 @@ private fun NetEditor(vm: MainViewModel, initial: NetConfig?, close: () -> Unit)
                 Field("主机", host, Modifier.weight(2f), hint = "192.168.1.10") { host = it; hostKey = "" }
                 Field("端口", port, Modifier.weight(1f), hint = type.defaultPort.toString(), number = true) { port = it }
             }
-            Field("用户名" + if (type == NetType.FTP || type == NetType.SMB) "（留空为匿名）" else "", user) { user = it }
+            Field("用户名" + when (type) { NetType.SMB -> "（留空为访客）"; NetType.FTP -> "（留空为匿名）"; else -> "" }, user) { user = it }
             Field(if (type == NetType.SFTP && keyFile.isNotBlank()) "私钥密码" else "密码", password, password = true) { password = it }
             Field(
                 when (type) {
                     NetType.SMB -> "共享路径，如 /share 或 /share/文件夹"
                     NetType.WEBDAV -> "服务器路径，如 /dav 或 /remote.php/dav/files/用户名"
                     else -> "初始路径"
-                }, path, hint = "/",
+                }, path, hint = if (type == NetType.SMB) "/share" else "/",
             ) { path = it }
+            if (type == NetType.SMB) Text("必须填写共享名，例如 Windows 共享名为 Public 时填写 /Public。暂不支持自动发现共享。",
+                fontSize = 12.sp, color = LocalTwin.current.muted)
             when (type) {
                 NetType.SFTP -> Field("私钥文件（可选，手机上的路径）", keyFile, hint = "/sdcard/.ssh/id_ed25519") { keyFile = it }
                 NetType.SMB -> Field("域（可选）", domain) { domain = it }
@@ -205,7 +211,7 @@ private fun NetEditor(vm: MainViewModel, initial: NetConfig?, close: () -> Unit)
             Row(Modifier.padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton({ test() }, enabled = !testing) { Text("测试连接") }
                 Button({
-                    if (type == NetType.SFTP && hostKey.isEmpty()) test { vm.app.net.upsert(build()); close() }
+                    if (type == NetType.SMB || (type == NetType.SFTP && hostKey.isEmpty())) test { vm.app.net.upsert(build()); close() }
                     else { vm.app.net.upsert(build()); close() }
                 }, enabled = !testing && host.isNotBlank()) { Text("保存") }
             }

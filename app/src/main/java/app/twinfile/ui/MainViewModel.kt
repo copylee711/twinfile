@@ -16,6 +16,7 @@ import app.twinfile.fs.Paths
 import app.twinfile.fs.SortSpec
 import app.twinfile.fs.Volumes
 import app.twinfile.ops.Ops
+import app.twinfile.ops.ArchivePasswords
 import app.twinfile.ops.Transfer
 import app.twinfile.util.FileLog
 import app.twinfile.update.Updater
@@ -30,6 +31,12 @@ import java.io.File
 import java.util.Calendar
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    val archivePasswords = ArchivePasswords()
+
+    override fun onCleared() {
+        archivePasswords.close()
+        super.onCleared()
+    }
     val app = application as TwinApp
     val prefs = app.prefs
     val panes = listOf(
@@ -365,7 +372,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openArchive(pane: PaneState, file: File) {
         io("无法打开压缩包") {
-            val src = app.sources["zip:${file.path}"] ?: ZipSource(file).also { app.sources[it.id] = it }
+            val src = app.sources["zip:${file.path}"] ?: archivePasswords.run(file) { password ->
+                ZipSource(file, password)
+            }.also { app.sources[it.id] = it }
             withContext(Dispatchers.Main) { open(pane, "/", src) }
         }
     }

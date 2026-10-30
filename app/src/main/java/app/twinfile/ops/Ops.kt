@@ -17,6 +17,7 @@ import java.util.concurrent.CountDownLatch
 
 /** A long file operation shown in the progress panel and the notification. */
 class OpJob(val title: String) {
+    val passwords = ArchivePasswords()
     val stats = TransferStats()
     var state by mutableStateOf(State.RUNNING)
     var error by mutableStateOf<String?>(null)
