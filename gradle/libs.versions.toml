@@ -23,6 +23,9 @@ shizuku = "13.1.5"
 zip4j = "2.11.5"
 
 [libraries]
+tink = { group = "com.google.crypto.tink", name = "tink", version = "1.17.0" }
+msal = { group = "com.microsoft.identity.client", name = "msal", version = "8.6.0" }
+google-auth = { group = "com.google.android.gms", name = "play-services-auth", version = "22.0.0" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version = "1.28.0" }
 xz = { group = "org.tukaani", name = "xz", version = "1.10" }
 zip4j = { group = "net.lingala.zip4j", name = "zip4j", version.ref = "zip4j" }

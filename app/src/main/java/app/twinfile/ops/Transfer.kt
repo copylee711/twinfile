@@ -8,6 +8,7 @@ import app.twinfile.fs.FsException
 import app.twinfile.fs.Paths
 import app.twinfile.fs.Progress
 import java.io.IOException
+import app.twinfile.fs.AbortableWrite
 
 enum class Resolution { SKIP, OVERWRITE, RENAME }
 
@@ -52,7 +53,7 @@ class Transfer(
     fun run() {
         if (same) {
             for (p in paths) {
-                if (Paths.isInside(dstDir, p)) throw FsException("不能把文件夹复制或移动到它自己里面：${Paths.name(p)}")
+                if (src.isInside(dstDir, p)) throw FsException("不能把文件夹复制或移动到它自己里面：${src.label(p)}")
             }
         }
         if (same && move && Cap.SERVER_MOVE in src.caps && paths.all { Paths.parent(it) == dstDir }) return
@@ -79,7 +80,7 @@ class Transfer(
     private fun measureRec(path: String, e: FEntry) {
         checkCancel()
         if (e.isDir) {
-            for (c in src.list(path)) measureRec(Paths.join(path, c.name), c)
+            for (c in src.list(path)) measureRec(Paths.join(path, c.pathName), c)
         } else {
             stats.totalFiles++
             stats.totalBytes += maxOf(e.size, 0)
@@ -88,13 +89,15 @@ class Transfer(
 
     /** Places [path] inside [toDir]; returns false when the item was skipped. */
     private fun transferOne(path: String, e: FEntry, toDir: String): Boolean {
+        if (e.name.isEmpty() || e.name in setOf(".", "..") || '/' in e.name || '\\' in e.name || '\u0000' in e.name)
+            throw FsException("目标文件系统不支持此文件名：${e.name}")
         var name = e.name
-        var target = Paths.join(toDir, name)
-        if (same && target == path) {
+        var target = dst.newPath(toDir, name)
+        if (same && (Paths.parent(path) == toDir || src.sameFile(path, target))) {
             // Copy onto itself: always keep both.
             if (move) return false
-            name = Paths.freeName(name, e.isDir) { dst.exists(Paths.join(toDir, it)) }
-            target = Paths.join(toDir, name)
+            name = Paths.freeName(name, e.isDir) { dst.exists(dst.newPath(toDir, it)) }
+            target = dst.newPath(toDir, name)
         }
         val existing = dst.stat(target)
         if (existing != null) {
@@ -104,8 +107,8 @@ class Transfer(
                     return false
                 }
                 Resolution.RENAME -> {
-                    name = Paths.freeName(name, e.isDir) { dst.exists(Paths.join(toDir, it)) }
-                    target = Paths.join(toDir, name)
+                    name = Paths.freeName(name, e.isDir) { dst.exists(dst.newPath(toDir, it)) }
+                    target = dst.newPath(toDir, name)
                 }
                 Resolution.OVERWRITE -> {
                     if (e.isDir && existing.isDir) return merge(path, target)
@@ -134,7 +137,7 @@ class Transfer(
             var all = true
             for (c in src.list(path)) {
                 checkCancel()
-                if (!transferOne(Paths.join(path, c.name), c, target)) all = false
+                if (!transferOne(Paths.join(path, c.pathName), c, target)) all = false
             }
             if (keepMtime && Cap.MTIME in dst.caps) dst.setMtime(target, e.mtime)
             if (move && all) src.delete(path)
@@ -149,7 +152,7 @@ class Transfer(
         var all = true
         for (c in src.list(path)) {
             checkCancel()
-            if (!transferOne(Paths.join(path, c.name), c, target)) all = false
+            if (!transferOne(Paths.join(path, c.pathName), c, target)) all = false
         }
         if (move && all) src.delete(path)
         return all
@@ -159,13 +162,18 @@ class Transfer(
         stats.current = e.name
         try {
             src.openRead(path).use { input ->
-                dst.openWrite(target, e.size).use { out ->
+                val out = dst.openWrite(target, e.size)
+                try {
                     while (true) {
                         val n = input.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
                         if (!progress.step(n.toLong(), e.name)) throw CancelledException()
                     }
+                    out.close()
+                } catch (e: Exception) {
+                    if (out is AbortableWrite) out.abort() else runCatching { out.close() }
+                    throw e
                 }
             }
         } catch (ex: IOException) {
@@ -186,7 +194,7 @@ class Transfer(
 
     private fun measureSkip(path: String) {
         for (c in src.list(path)) {
-            if (c.isDir) measureSkip(Paths.join(path, c.name)) else {
+            if (c.isDir) measureSkip(Paths.join(path, c.pathName)) else {
                 stats.doneFiles++
                 stats.doneBytes += maxOf(c.size, 0)
             }

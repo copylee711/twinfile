@@ -70,6 +70,7 @@ jobs:
         shell: bash
         env:
           TWINFILE_REQUIRE_SIGNING: "1"
+          TWINFILE_MICROSOFT_CLIENT_ID: ${{ vars.TWINFILE_MICROSOFT_CLIENT_ID }}
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease :app:testDebugUnitTest

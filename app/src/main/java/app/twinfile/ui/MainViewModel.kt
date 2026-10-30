@@ -17,6 +17,9 @@ import app.twinfile.fs.SortSpec
 import app.twinfile.fs.Volumes
 import app.twinfile.ops.Ops
 import app.twinfile.ops.ArchivePasswords
+import app.twinfile.cloud.CloudSource
+import app.twinfile.cloud.CloudAccount
+import app.twinfile.cloud.belongsToCloud
 import app.twinfile.ops.Transfer
 import app.twinfile.util.FileLog
 import app.twinfile.update.Updater
@@ -32,6 +35,25 @@ import java.util.Calendar
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val archivePasswords = ArchivePasswords()
+    var cloudBusy by mutableStateOf(false)
+    var cloudStatus by mutableStateOf<String?>(null)
+
+    fun disconnectCloud(account: CloudAccount) {
+        if (cloudBusy) return
+        cloudBusy = true
+        cloudStatus = null
+        val source = app.sources[account.sourceId]
+        val cache = app.cloud.cacheDirectory(account)
+        panes.filter { it.source.belongsToCloud(account, cache) }.forEach { open(it, app.local.home(), app.local) }
+        if (clip?.source?.belongsToCloud(account, cache) == true) clip = null
+        if (source != null) viewer = null
+        app.cloud.remove(account)
+        viewModelScope.launch {
+            val revoked = withContext(Dispatchers.IO) { runCatching { app.cloud.auth.signOut(account) }.isSuccess }
+            cloudStatus = if (revoked) "已移除此云盘" else "已在本机断开；撤销授权未完成，可在服务商的账号权限页面移除 TwinFile"
+            cloudBusy = false
+        }
+    }
 
     override fun onCleared() {
         archivePasswords.close()
@@ -217,6 +239,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun jump(pane: PaneState, path: String) {
+        val source = pane.source
+        io("无法打开路径") {
+            val resolved = source.resolvePath(path)
+            withContext(Dispatchers.Main) { open(pane, resolved, source) }
+        }
+    }
+
+    fun cloudConnected(account: CloudAccount) {
+        app.cloud.upsert(account)
+        val source = app.sources.getValue(account.sourceId)
+        panes.filter { it.source.id == account.sourceId }.forEach { open(it, it.path, source, push = false) }
+        cloudBusy = false
+        cloudStatus = "已连接 ${account.provider.label} · ${account.display}"
+    }
+
     /** Set while SyncBoard's approval dialog should be shown; the activity launches it. */
     var syncBoardApproval by mutableStateOf<((Boolean) -> Unit)?>(null)
 
@@ -248,7 +286,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pane.error = if (it.size <= 1 && source === app.local && isRestricted(path))
                     "Android 11 起，系统不允许应用直接访问 Android/data 和 obb。\n在「设置 → 高级访问」开启 Shizuku 或 Root 后即可浏览。"
                 else null
-                val reveal = pane.reveal?.let { n -> pane.visible.indexOfFirst { e -> e.name == n } }?.takeIf { i -> i >= 0 }
+                val reveal = pane.reveal?.let { n -> pane.visible.indexOfFirst { e -> e.pathName == n } }?.takeIf { i -> i >= 0 }
                 pane.reveal = null
                 if (reveal != null) pane.listState.scrollToItem(maxOf(0, reveal - 3))
                 if (!keepScroll) {
@@ -331,20 +369,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun enter(pane: PaneState, e: FEntry) {
         focus = pane.index
         if (e.isDir) {
-            open(pane, Paths.join(pane.path, e.name))
+            open(pane, Paths.join(pane.path, e.pathName))
         }
     }
 
     /** Opens a file: built-in viewers for images/text, archives as folders, else [external]. */
     fun openFile(pane: PaneState, e: FEntry, external: (File) -> Unit) {
         focus = pane.index
-        val path = Paths.join(pane.path, e.name)
+        val path = Paths.join(pane.path, e.pathName)
         val local = pane.source === app.local
         if (local) prefs.addRecent("local", path, false)
         when {
             Kinds.of(e) == Kind.IMAGE -> {
                 val images = pane.visible.filter { !it.isDir && Kinds.of(it) == Kind.IMAGE }
-                viewer = Viewer.Images(pane.source, pane.path, images, images.indexOfFirst { it.name == e.name }.coerceAtLeast(0))
+                viewer = Viewer.Images(pane.source, pane.path, images, images.indexOfFirst { it.pathName == e.pathName }.coerceAtLeast(0))
             }
             Kinds.of(e).textual || (e.size in 0..64 * 1024 && Paths.extension(e.name).isEmpty()) ->
                 viewer = Viewer.Text(pane.source, path, e)
@@ -355,12 +393,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Runs [block] with a local file for [e], downloading remote files to the cache first. */
     fun withLocalCopy(pane: PaneState, e: FEntry, block: (File) -> Unit) {
-        if (pane.source === app.local) return block(File(Paths.join(pane.path, e.name)))
+        if (pane.source === app.local) return block(File(Paths.join(pane.path, e.pathName)))
         val source = pane.source
-        val path = Paths.join(pane.path, e.name)
+        val path = Paths.join(pane.path, e.pathName)
         say("正在读取 ${e.name}…")
         io("读取失败") {
-            val dir = File(app.cacheDir, "open/${(source.id + path).hashCode().toUInt()}").apply { mkdirs() }
+            val root = if (source is CloudSource) source.cacheDir else app.cacheDir
+            val dir = File(root, "open/${(source.id + path).hashCode().toUInt()}").apply { mkdirs() }
+            if (e.name in setOf(".", "..") || '/' in e.name || '\u0000' in e.name) throw FsException("此文件名无法保存到本机，请先在云盘中重命名")
             val f = File(dir, e.name)
             if (!(f.isFile && f.length() == e.size && f.lastModified() == e.mtime)) {
                 source.openRead(path).use { input -> f.outputStream().use { input.copyTo(it, 256 * 1024) } }
@@ -384,7 +424,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val p = pane.path
         if (p == "/") return pane.source.container?.let { Paths.name(it) } ?: if (pane.source === app.local) "根目录" else pane.source.title
         if (pane.source === app.local && p == Volumes.internalPath()) return "内部存储"
-        return Paths.name(p)
+        return pane.source.label(p)
     }
 
     /** Breadcrumb segments for the title bar: (label, path), root first. */
@@ -402,7 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var cur = rootPath
         p.removePrefix(rootPath).split('/').filter { it.isNotEmpty() }.forEach { seg ->
             cur = Paths.join(cur, seg)
-            out += seg to cur
+            out += src.label(cur) to cur
         }
         return out
     }
@@ -439,11 +479,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectAll(pane: PaneState) {
-        pane.selected = pane.visible.map { it.name }.toSet()
+        pane.selected = pane.visible.map { it.pathName }.toSet()
     }
 
     fun invert(pane: PaneState) {
-        pane.selected = pane.visible.map { it.name }.toSet() - pane.selected
+        pane.selected = pane.visible.map { it.pathName }.toSet() - pane.selected
     }
 
     fun clearSelection(pane: PaneState) {
@@ -452,12 +492,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Selects everything between the first and last selected items. */
     fun selectRange(pane: PaneState) {
-        val idx = pane.visible.withIndex().filter { it.value.name in pane.selected }.map { it.index }
+        val idx = pane.visible.withIndex().filter { it.value.pathName in pane.selected }.map { it.index }
         if (idx.size < 2) {
             say("先选中两个文件，再选择它们之间的全部")
             return
         }
-        pane.selected = pane.visible.subList(idx.first(), idx.last() + 1).map { it.name }.toSet()
+        pane.selected = pane.visible.subList(idx.first(), idx.last() + 1).map { it.pathName }.toSet()
     }
 
     enum class Period { DAY, WEEK, MONTH, YEAR }
@@ -479,12 +519,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         val keys = ref.map { key(it.mtime) }.toSet()
-        pane.selected = pane.selected + pane.visible.filter { key(it.mtime) in keys }.map { it.name }
+        pane.selected = pane.selected + pane.visible.filter { key(it.mtime) in keys }.map { it.pathName }
     }
 
     fun selectByKeyword(pane: PaneState, keyword: String) {
         if (keyword.isBlank()) return
-        pane.selected = pane.selected + pane.visible.filter { it.name.contains(keyword, true) }.map { it.name }
+        pane.selected = pane.selected + pane.visible.filter { it.name.contains(keyword, true) }.map { it.pathName }
     }
 
     // ---- file operations ----
@@ -503,12 +543,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun create(pane: PaneState, name: String, folder: Boolean) {
         val n = name.trim()
         if (n.isEmpty() || '/' in n) return say("名称无效")
-        val path = Paths.join(pane.path, n)
+        val path = pane.source.newPath(pane.path, n)
         io(if (folder) "新建文件夹失败" else "新建文件失败") {
             if (folder) pane.source.mkdir(path) else pane.source.createFile(path)
+            val created = pane.source.stat(path)
             withContext(Dispatchers.Main) {
                 refreshShowing(pane.source, pane.path)
-                pane.selected = setOf(n)
+                pane.selected = setOf(created?.pathName ?: n)
             }
         }
     }
@@ -517,10 +558,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val n = newName.trim()
         if (n.isEmpty() || '/' in n || n == e.name) return
         io("重命名失败") {
-            pane.source.rename(Paths.join(pane.path, e.name), n)
+            val renamed = pane.source.rename(Paths.join(pane.path, e.pathName), n)
             withContext(Dispatchers.Main) {
                 refreshShowing(pane.source, pane.path)
-                pane.selected = setOf(n)
+                pane.selected = setOf(Paths.name(renamed))
             }
         }
     }
@@ -529,10 +570,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun swapNames(pane: PaneState, a: FEntry, b: FEntry) {
         io("交换文件名失败") {
             val s = pane.source
-            val tmp = Paths.freeName(".twinfile-swap", false) { s.exists(Paths.join(pane.path, it)) }
-            s.rename(Paths.join(pane.path, a.name), tmp)
-            s.rename(Paths.join(pane.path, b.name), a.name)
-            s.rename(Paths.join(pane.path, tmp), b.name)
+            val tmp = Paths.freeName(".twinfile-swap", false) { s.exists(s.newPath(pane.path, it)) }
+            val temporary = s.rename(Paths.join(pane.path, a.pathName), tmp)
+            s.rename(Paths.join(pane.path, b.pathName), a.name)
+            s.rename(temporary, b.name)
             withContext(Dispatchers.Main) { refreshShowing(s, pane.path) }
         }
     }
@@ -543,14 +584,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun delete(pane: PaneState, entries: List<FEntry>, toTrash: Boolean) {
         val source = pane.source
         val dir = pane.path
-        val paths = entries.map { Paths.join(dir, it.name) }
+        val paths = entries.map { Paths.join(dir, it.pathName) }
         pane.selected = emptySet()
         val title = if (toTrash) "移到回收站" else "删除"
         Ops.start("$title ${entries.size} 项", { job ->
             job.stats.totalFiles = paths.size
             for (p in paths) {
                 if (job.stats.cancelled) break
-                job.stats.current = Paths.name(p)
+                job.stats.current = source.label(p)
                 if (toTrash) app.trash.moveToTrash(p)
                 else source.delete(p) { _, name -> job.stats.current = name; !job.stats.cancelled }
                 job.stats.doneFiles++
@@ -567,9 +608,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun runTransfer(src: FileSource, srcDir: String, entries: List<FEntry>, dst: FileSource, dstDir: String, move: Boolean) {
-        val paths = entries.map { Paths.join(srcDir, it.name) }
+        val paths = entries.map { Paths.join(srcDir, it.pathName) }
         val verb = if (move) "移动" else "复制"
-        Ops.start("$verb ${entries.size} 项到 ${Paths.name(dstDir)}", { job ->
+        Ops.start("$verb ${entries.size} 项到 ${dst.label(dstDir)}", { job ->
             Transfer(src, paths, dst, dstDir, move, prefs.keepMtime, job.stats) { job.ask(it) }.run()
         }) {
             viewModelScope.launch { refreshShowing(src, srcDir); refreshShowing(dst, dstDir) }
@@ -593,7 +634,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (c.source === pane.source && c.dir == pane.path) {
             if (c.move) return say("文件已在这个文件夹")
             // Copy into the same folder: duplicates with numbered names.
-        } else if (c.source === pane.source && c.entries.any { Paths.isInside(pane.path, Paths.join(c.dir, it.name)) && it.isDir }) {
+        } else if (c.source === pane.source && c.entries.any { Paths.isInside(pane.path, Paths.join(c.dir, it.pathName)) && it.isDir }) {
             return say("不能粘贴到它自己里面")
         }
         if (c.move) clip = null
@@ -603,13 +644,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ---- bookmarks & home ----
 
     fun addBookmark(pane: PaneState, entry: FEntry? = null) {
-        val path = if (entry != null) Paths.join(pane.path, entry.name) else pane.path
+        val path = if (entry != null) Paths.join(pane.path, entry.pathName) else pane.path
         if (prefs.bookmarks.any { it.source == pane.source.id && it.path == path }) return say("已在书签中")
-        prefs.update { bookmarks.add(0, Bookmark(Paths.name(path), pane.source.id, path)) }
+        prefs.update { bookmarks.add(0, Bookmark(pane.source.label(path), pane.source.id, path)) }
         say("已添加书签")
     }
 
     fun setHome(pane: PaneState) {
+        if (!pane.source.phonePaths) return say("此位置请添加书签后访问")
         prefs.update { if (pane.index == 0) homeLeft = pane.path else homeRight = pane.path }
         say("已设为${if (pane.index == 0) "左" else "右"}窗口首页")
     }

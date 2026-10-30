@@ -7,6 +7,7 @@ Android 原生文件管理工具，界面使用简体中文和 Jetpack Compose M
 - 色彩、字体、浅色/深色：`ui/Theme.kt` 的 TwinTheme 与 MaterialTheme。
 - 通用输入和确认：`ui/Dialogs.kt` 的 InputDialog、CheckRow 和 Material3 AlertDialog。
 - 压缩格式和密码：`ui/ArchiveDialogs.kt`，复用同一密码字段，默认遮挡，提供显示/隐藏。
+- 云盘：`ui/CloudScreen.kt` 负责账号与授权状态；未配置的提供方禁用登录并说明原因。Google/微软的同意界面由原生授权库管理。账号标识与文件路径使用稳定 ID，显示名称独立，支持重名。移除账号有应用内确认，云端删除提示回收站语义。
 - 网络配置：`ui/NetworkScreen.kt` 的 Field 和内联连接状态；保存 SMB 前实际读取指定共享目录。
 - 操作进度、取消和错误：`ops/Ops.kt` 与现有任务面板；浏览消息由 MainViewModel.say 提供。
 

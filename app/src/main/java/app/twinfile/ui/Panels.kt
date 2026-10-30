@@ -158,6 +158,7 @@ fun Drawer(vm: MainViewModel, close: () -> Unit, navigate: (Screen) -> Unit) {
                 }
             }
             Section("工具")
+            DrawerItem(Icons.Filled.Lan, "云盘") { close(); navigate(Screen.CLOUD) }
             DrawerItem(Icons.Filled.Lan, "网络位置") { close(); navigate(Screen.NETWORK) }
             DrawerItem(Icons.Filled.Computer, "电脑") { close(); navigate(Screen.PC) }
             DrawerItem(Icons.Filled.DeleteOutline, "回收站") { close(); navigate(Screen.TRASH) }

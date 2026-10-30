@@ -125,14 +125,14 @@ fun PaneView(
                         ParentRow(compact) { vm.focus = pane.index; vm.up(pane) }
                     }
                 }
-                items(rows, key = { it.name }) { e ->
+                items(rows, key = { it.pathName }) { e ->
                     FileRow(
                         vm, pane, e, compact,
-                        selected = e.name in pane.selected,
+                        selected = e.pathName in pane.selected,
                         onClick = {
                             vm.focus = pane.index
                             when {
-                                pane.selecting -> vm.toggle(pane, e.name)
+                                pane.selecting -> vm.toggle(pane, e.pathName)
                                 e.isDir -> vm.enter(pane, e)
                                 else -> onOpenFile(e)
                             }
@@ -208,7 +208,7 @@ private fun FileRow(
 ) {
     val twin = LocalTwin.current
     // Follows the finger while a sideways drag is about to start selection, then springs back.
-    val held = pane.swipeKey == e.name
+    val held = pane.swipeKey == e.pathName
     val shift by animateFloatAsState(
         if (held) pane.swipeOffset else 0f,
         if (held) snap() else spring(dampingRatio = 0.6f, stiffness = 600f),
@@ -216,11 +216,11 @@ private fun FileRow(
     )
     // A located entry glows once and fades back.
     val glow = remember { Animatable(0f) }
-    if (pane.flash == e.name) LaunchedEffect(pane.flashTick) {
+    if (pane.flash == e.pathName) LaunchedEffect(pane.flashTick) {
         glow.snapTo(1f)
         kotlinx.coroutines.delay(500)
         glow.animateTo(0f, tween(1200))
-        if (pane.flash == e.name) pane.flash = null
+        if (pane.flash == e.pathName) pane.flash = null
     }
     Row(
         Modifier

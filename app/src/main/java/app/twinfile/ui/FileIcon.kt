@@ -219,7 +219,7 @@ fun FileIcon(source: FileSource, dir: String, e: FEntry, size: Dp) {
     val thumb: ImageBitmap? = if (thumbable) {
         val context = LocalContext.current
         val px = with(LocalDensity.current) { size.roundToPx() }
-        val path = Paths.join(dir, e.name)
+        val path = Paths.join(dir, e.pathName)
         val key = ThumbLoader.key(source, path, e)
         val state by produceState(ThumbLoader.cached(key)?.asImageBitmap(), key) {
             if (value == null) value = ThumbLoader.load(context, source, path, e, px)?.asImageBitmap()

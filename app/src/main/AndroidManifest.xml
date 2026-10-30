@@ -51,6 +51,16 @@
             </intent-filter>
         </activity>
 
+        <!-- MSAL validates state/PKCE and the certificate-derived redirect URI. -->
+        <activity android:name="com.microsoft.identity.client.BrowserTabActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="msauth" android:host="${applicationId}" />
+            </intent-filter>
+        </activity>
+
         <!-- 「定位所在位置」 in other apps' open-with and share menus. -->
         <activity
             android:name=".ui.LocateActivity"

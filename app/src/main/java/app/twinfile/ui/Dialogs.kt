@@ -148,7 +148,7 @@ fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
 
 @Composable
 fun DeleteDialog(count: Int, firstName: String, canTrash: Boolean, trashDefault: Boolean,
-                 onDismiss: () -> Unit, onDelete: (toTrash: Boolean) -> Unit) {
+                 onDismiss: () -> Unit, cloudTrash: Boolean = false, onDelete: (toTrash: Boolean) -> Unit) {
     var toTrash by remember { mutableStateOf(canTrash && trashDefault) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -157,7 +157,9 @@ fun DeleteDialog(count: Int, firstName: String, canTrash: Boolean, trashDefault:
             Column {
                 Text(if (count == 1) "删除「$firstName」？" else "删除选中的 $count 项？")
                 if (canTrash) CheckRow("移到回收站", toTrash) { toTrash = it }
-                if (!toTrash) {
+                if (cloudTrash) {
+                    Text("文件将移入云盘回收站，保留期限由云盘服务决定。", fontSize = 13.sp)
+                } else if (!toTrash) {
                     Spacer(Modifier.height(6.dp))
                     Text("将永久删除，无法恢复", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                 }
@@ -203,7 +205,7 @@ fun PropertiesDialog(source: FileSource, dir: String, entries: List<FEntry>, onD
     val context = LocalContext.current
     val single = entries.singleOrNull()
     val stat by androidx.compose.runtime.produceState<FEntry?>(null, single) {
-        if (single != null) value = withContext(Dispatchers.IO) { runCatching { source.stat(Paths.join(dir, single.name)) }.getOrNull() }
+        if (single != null) value = withContext(Dispatchers.IO) { runCatching { source.stat(Paths.join(dir, single.pathName)) }.getOrNull() }
     }
     // Recursive size of folders, counted in the background.
     val total by androidx.compose.runtime.produceState(Triple(0L, 0, 0) to false, entries) {
@@ -215,14 +217,14 @@ fun PropertiesDialog(source: FileSource, dir: String, entries: List<FEntry>, onD
                 if (!coroutineContext.isActive) return
                 if (e.isDir) {
                     dirs++
-                    for (c in runCatching { source.list(path) }.getOrDefault(emptyList())) walk(Paths.join(path, c.name), c)
+                    for (c in runCatching { source.list(path) }.getOrDefault(emptyList())) walk(Paths.join(path, c.pathName), c)
                     value = Triple(bytes, files, dirs) to false
                 } else {
                     files++
                     bytes += maxOf(0, e.size)
                 }
             }
-            for (e in entries) walk(Paths.join(dir, e.name), e)
+            for (e in entries) walk(Paths.join(dir, e.pathName), e)
             value = Triple(bytes, files, dirs) to true
         }
     }
@@ -234,11 +236,11 @@ fun PropertiesDialog(source: FileSource, dir: String, entries: List<FEntry>, onD
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 if (single != null) {
                     Prop("名称", single.name)
-                    Prop("位置", dir)
+                    Prop("位置", source.displayPath(dir))
                     Prop("类型", if (single.isDir) "文件夹" else "文件（${Paths.extension(single.name).ifEmpty { "无扩展名" }}）")
                 } else {
                     Prop("项目", "${entries.size} 项")
-                    Prop("位置", dir)
+                    Prop("位置", source.displayPath(dir))
                 }
                 val (t, done) = total
                 val (bytes, files, dirs) = t
@@ -252,13 +254,13 @@ fun PropertiesDialog(source: FileSource, dir: String, entries: List<FEntry>, onD
                 if (single != null && !single.isDir) {
                     Spacer(Modifier.height(8.dp))
                     if (!hashing) TextButton({ hashing = true }) { Text("计算校验值") }
-                    else HashBlock(source, Paths.join(dir, single.name), single.size) { copyText(context, it) }
+                    else HashBlock(source, Paths.join(dir, single.pathName), single.size) { copyText(context, it) }
                 }
             }
         },
         confirmButton = { TextButton(onDismiss) { Text("关闭") } },
         dismissButton = {
-            TextButton({ copyText(context, if (single != null) Paths.join(dir, single.name) else dir) }) { Text("复制路径") }
+            TextButton({ copyText(context, source.displayPath(if (single != null) Paths.join(dir, single.pathName) else dir)) }) { Text("复制路径") }
         },
     )
 }

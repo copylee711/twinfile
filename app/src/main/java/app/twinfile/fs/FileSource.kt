@@ -13,6 +13,8 @@ data class FEntry(
     val hidden: Boolean = name.startsWith("."),
     val perms: String? = null,
     val isLink: Boolean = false,
+    /** Source-specific child segment; distinct from the displayed name for ID-based sources. */
+    val pathName: String = name,
 )
 
 /** A place a pane can start from: a drive, a volume, the share root of a server... */
@@ -43,6 +45,9 @@ open class FsException(message: String, cause: Throwable? = null) : IOException(
 
 class CancelledException : IOException("cancelled")
 
+/** A staged writer can abandon its content without committing an incomplete upload. */
+interface AbortableWrite { fun abort() }
+
 /**
  * A browsable file tree: local storage, a network server or the PC. Paths are absolute,
  * '/'-separated strings with no trailing slash (except the root "/").
@@ -65,9 +70,18 @@ interface FileSource {
     fun roots(): List<Root>
     fun home(): String = roots().firstOrNull()?.path ?: "/"
 
+    fun label(path: String): String = Paths.name(path)
+    fun displayPath(path: String): String = path
+    fun resolvePath(path: String): String = Paths.normalize(path)
+
     fun list(dir: String): List<FEntry>
     fun stat(path: String): FEntry?
     fun exists(path: String): Boolean = stat(path) != null
+    /** ID-backed sources may have multiple paths referring to the same object. */
+    fun sameFile(first: String, second: String): Boolean = first == second
+    fun isInside(path: String, directory: String): Boolean = Paths.isInside(path, directory)
+    /** Construct a destination from a literal new name, never an object-reference segment. */
+    fun newPath(directory: String, name: String): String = Paths.join(directory, name)
 
     fun mkdir(path: String)
     fun createFile(path: String)

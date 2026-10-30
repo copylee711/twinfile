@@ -1,49 +1,108 @@
-# Google Drive / OneDrive 接入可行性
+# Google Drive 与 OneDrive
 
-调研日期：2026-10-30。本版本只完成调研，不包含云盘登录或文件管理入口。
+TwinFile 已实现两种云盘的原生授权与文件管理客户端。文件在本机与云盘之间直接传输，不经过 TwinFile 自有服务器。
 
-## 结论
+Google Android OAuth 客户端已按维护者提供的配置接入，并启用 Google Drive 入口。维护者已确认包名、release 签名指纹、Drive API 和测试用户配置。OneDrive 的应用尚未注册，入口在填写公开 client ID 后启用。
 
-两者都可以通过 OAuth 接入，并复用 TwinFile 的双栏、浏览和传输界面。用户已确认 Google Drive 按完整云盘管理设计，接受申请受限的 `drive` 全盘权限；文件操作由用户在本机控制，不通过应用自有服务器中转。建议先实现 OneDrive，再接入 Google Drive。主要阻力不是文件 API，而是账号授权、Google 的全盘权限审核，以及 FileSource 当前以路径代替文件 ID 的设计。
+**当前验证范围**：已完成模拟 API、文件操作契约、分块上传、令牌重试和下载凭据隔离测试。签名版已在模拟器启动 Google 原生账号授权并验证取消返回；真实 Google/Microsoft 账号授权、撤权与文件往返仍需账号联调，不以模拟服务测试替代。
 
-## 授权与发布条件
+<img src="images/cloud.png" width="300" alt="Google Drive 登录可用，OneDrive 尚未配置的云盘页面">
 
-| 项目 | Google Drive | OneDrive |
+## 可以做什么
+
+| 操作 | Google Drive | OneDrive |
 |---|---|---|
-| 原生登录 | Android 授权客户端，或系统浏览器 OAuth；不要使用嵌入式 WebView | MSAL Android，系统浏览器，公共客户端 |
-| 注册 | Google Cloud 项目、Drive API、OAuth 同意屏幕、Android 包名及签名证书 | Entra 应用注册，Android 包名、签名散列和重定向 URI |
-| 建议权限 | 完整文件管理需 `drive`；`drive.file` 仅限应用创建或用户明确授权给应用的文件 | 委托权限 `Files.ReadWrite`；令牌续期交由 MSAL 管理 |
-| 账号 | Google 账号；共享云端硬盘需额外支持 | 注册时选择个人和组织账号；组织策略可能禁止用户自行同意 |
-| 发布条件 | `drive` 为受限权限，公开发行涉及 OAuth 审核；安全评估要求取决于数据是否经服务器存储或传输，不能承诺免审 | 需要真实应用注册和账号联调；组织租户可另有管理员授权要求 |
+| 账号 | Google 账号 | 个人账号、允许用户授权的工作/学校账号 |
+| 浏览范围 | 我的云端硬盘 | 当前账号的默认 OneDrive |
+| 文件操作 | 下载、上传、新建、重命名、移动、移入回收站 | 同左 |
+| 双栏传输 | 本地、网络位置和云盘间复制；跨来源移动使用复制后删除 | 同左 |
+| 多账号 | 支持，来源与缓存按账号隔离 | 支持 |
+| 重名文件 | 按 ID 区分，操作不依赖显示名称 | 按 ID 引用 |
+| 原生在线文档 | 文档、表格、幻灯片、绘图导出为 PDF，不直接修改其内容 | 普通 Office 文件按原文件下载 |
 
-`drive.file` 不能提供与本地文件夹一样的全盘浏览：已有但未授权给应用的文件不会出现。这一点必须在产品上明确，避免再次出现“登录成功但看起来空目录”。不要为了避开审核而把此权限包装成全盘管理。
+Google 共享云端硬盘、共享快捷方式、OneDrive 的跨 drive 共享快捷方式，以及 Microsoft 世纪互联/政府云暂未接入。快捷方式会保留在列表中，尝试打开时明确说明不支持，不会伪装成空目录。
 
-APK 是公共客户端，不能保存 client secret。Google 与 Microsoft 的 client ID 是应用配置，不是密码。测试签名和 release 签名需要各自配置正确的回调。账号令牌应由授权库缓存或用 Android Keystore 加密，禁止写入日志、路径或普通配置 JSON；退出登录清理令牌、目录映射与本地预览缓存。
+列表会读取完整分页。授权失效、无权限、服务限流和不存在的文件均报告错误，不返回伪成功的空列表。Google Drive 同目录重名项使用各自的对象 ID；手动输入的路径遇到重名会要求从列表选择具体文件。
 
-## 与当前代码的衔接
+新文件名与已有对象引用分别编码；类似内部引用的文件名也会作为字面名称处理，不会改变上传、覆盖或删除的目标。
 
-当前 `fs/FileSource.kt` 提供 list/stat/openRead/openWrite/mkdir/rename/delete，`ops/Transfer.kt` 已支持来源之间的流式复制。可以增加独立的 CloudAccountStore、授权协调器、GoogleDriveSource 和 OneDriveSource。不要把 access token 塞进 NetConfig.password，也不要套用 NetSource 的用户名/密码连接池。
+上传先写入本机临时文件，再使用有界分块发送：OneDrive 每块 5 MiB，Google Drive 每块 4 MiB。需要足够的本机缓存空间。取消或源读取失败不会提交残缺的缓存文件；上传失败会尝试终止会话。重试会重新上传，目前不支持跨应用重启的断点续传。进度包括本机暂存，达到暂存字节数后仍可能等待云端确认。
 
-需要先解决以下接口差异：
+## Google Cloud 注册与配置
 
-1. **稳定 ID**：Google Drive 允许同一目录重名；重命名、移动后 ID 不变。现有按名称索引的路径接口不能无损表达这些对象。为 FEntry 加可选稳定 ID，再让目录导航与传输引用带 source/account/item ID；OneDrive 同样保存 drive ID 和 item ID。不要仅以文件名作为缓存键。
-2. **分页与取消**：Drive 的 nextPageToken 和 Graph 的 @odata.nextLink 都要读完或在 UI 中提供显式分页。请求失败不能返回空列表；处理 401 后续期、403 权限、429/503 的 Retry-After 和撤权后重新登录。
-3. **下载**：普通文件使用流式下载；Google Docs/Sheets/Slides 要通过 export 选择文件类型，不能当作普通二进制文件下载。Graph 下载可能重定向到预授权 URL，不能把 bearer token 转发给任意下载域名，也不要记录预授权 URL。
-4. **上传**：小文件可直接上传，大文件用可恢复上传会话；用临时磁盘文件或有界管道衔接 openWrite，不能把整个文件放进内存。明确取消、失败清理、同名冲突和重试语义。
-5. **能力**：按提供方声明服务端移动、复制、时间戳、缩略图能力。云端删除和本地回收站不同，应说明删除去向；共享盘、快捷方式、原生文档和跨账号移动需要独立规则。
+当前公开的 Android client ID：
 
-实现建议：先做稳定 ID 与授权状态模型；再做 OneDrive 的登录/退出、完整分页浏览、下载；补齐上传和目录操作；最后添加 Google Drive，按已确定的“完整云盘”范围申请 `drive` 权限。两者均可沿用已有 OkHttp 做 REST 请求，授权使用官方原生库，避免引入完整 Graph/Google API SDK 增加体积。
+```text
+308773623063-bce453o5cj7llcinhg7t45mlgbj1l9ep.apps.googleusercontent.com
+```
 
-## 上线前验证
+此 ID 不是秘密。Google 原生授权服务根据 **包名和签名证书** 匹配 Android 客户端，不把 client secret 放进 APK，也不使用 Web 客户端的后端授权码流程。
 
-使用真实的个人账号和工作/学校账号验证登录、回调、令牌过期、撤销授权、重装、多账号、分页、重名、大文件、网络中断和退出清理。Google 还应覆盖原生文档导出及选定权限的可见范围。当前没有注册这些 OAuth 应用，也未进行真实云盘账号联调。
+1. 在 Google Cloud 项目中启用 Google Drive API。
+2. 配置 OAuth 品牌、用户类型和数据访问，声明完整的 `https://www.googleapis.com/auth/drive` 权限。
+3. 创建 Android 类型的 OAuth 客户端，包名填写 `app.twinfile`，绑定实际签名证书的 SHA-1。
+4. 测试状态下添加测试账号。公开发行时按 Google 的受限权限审核流程提交；本机直接处理并不自动免除审核，安全评估要求以实际数据流和官方政策为准。
+5. 使用正式签名 APK 验证首次同意、账号选择、授权过期、撤销授权与文件操作。debug APK 使用不同证书，需要单独注册其 SHA-1。
+
+本项目正式签名信息：
+
+```text
+包名：app.twinfile
+SHA-1：D9:A3:88:74:F1:16:61:9E:CA:45:D4:12:44:08:4D:BB:84:18:A5:E8
+```
+
+构建参数（公开配置已在项目 gradle.properties 中填写）：
+
+```properties
+twinfile.googleAndroidClientId=你的Android客户端ID
+twinfile.googleDriveEnabled=true
+```
+
+`drive.file` 只能访问应用创建或用户明确选给应用的文件，不能用于全盘浏览。此项目已明确选择受限的 `drive` 权限。
+
+## Microsoft Entra 注册与配置
+
+1. 创建应用注册，支持个人 Microsoft 账号和组织目录账号。
+2. 添加 Android 平台，包名填写 `app.twinfile`。正式签名的 Base64 散列如下；使用自有签名时必须重新计算。
+3. 使用公共客户端，授权 API 添加 Microsoft Graph 委托权限 `Files.ReadWrite`。不创建、不分发 client secret。组织账号仍受租户管理员的同意策略约束。
+4. 填写公开 client ID，构建并测试 MSAL 浏览器授权、静默续期与退出。
+
+```text
+签名散列：2aOIdPEWYZ7KRdQSRAhNu4QYpeg=
+回调 URI：msauth://app.twinfile/2aOIdPEWYZ7KRdQSRAhNu4QYpeg%3D
+```
+
+本机构建可以在用户级 `~/.gradle/gradle.properties` 填写：
+
+```properties
+twinfile.microsoftClientId=你的公开应用client-ID
+```
+
+或使用环境变量 `TWINFILE_MICROSOFT_CLIENT_ID`。GitHub Release 构建读取同名 **Repository variable**，不需要将它保存为 secret。未配置时 OneDrive 按钮保持禁用，并说明此版本尚未开放登录。
+
+## 账号与数据
+
+- Google 使用 Google Identity Services；Microsoft 使用 MSAL 8.6。访问令牌仅在内存和平台/SDK 的凭据缓存中使用，不存入网络位置密码字段或普通 JSON。
+- 账号元数据以 Android Keystore 加密后保存在应用私有目录；每个账号的上传、预览缓存分开存放。
+- 下载跳转到预授权地址时不携带 bearer token；OneDrive 上传会话同样不附加 bearer token。只向配置的云盘 API 主机发送授权头。
+- 移除账号会使旧来源引用失效，清理本机缓存，并尝试撤销或移除本应用的授权。离线时无法保证远程撤权完成，界面会提示到服务商的账号权限页面检查；不移除手机系统账号。
+- 云端删除使用服务商回收站，保留期限和恢复方式由服务商决定。
+
+## 代码与测试
+
+- `cloud/CloudAuth.kt`：原生授权、续期、退出。
+- `cloud/CloudManager.kt`：加密账号存储、来源和缓存生命周期。
+- `cloud/CloudHttp.kt`：凭据隔离、错误映射、401 重试、限流处理。
+- `cloud/DriveApis.kt`：Drive / Graph REST 文件操作、分页和上传会话。
+- `cloud/CloudSource.kt`：以稳定对象 ID 适配 FileSource。
+- `CloudSourceTest`、`CloudHttpTest`、`CloudUploadTest`：重名操作、跨来源传输、缓存失败清理、分页、认证重试、重定向隔离和分块协议验证。
 
 ## 官方资料
 
 - [Drive 权限范围与审核](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
-- [Google 原生应用 OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [Android Google 原生授权](https://developer.android.com/identity/authorization)
+- [Drive 上传协议](https://developers.google.com/workspace/drive/api/guides/manage-uploads)
 - [Drive 下载与导出](https://developers.google.com/workspace/drive/api/guides/manage-downloads)
 - [MSAL Android 配置](https://learn.microsoft.com/en-us/entra/msal/android/msal-configuration)
 - [Graph 权限参考](https://learn.microsoft.com/en-us/graph/permissions-reference#filesreadwrite)
-- [Graph 目录分页](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0)
 - [Graph 上传会话](https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession?view=graph-rest-1.0)

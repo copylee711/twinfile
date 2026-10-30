@@ -62,5 +62,5 @@ class PaneState(val index: Int, source: FileSource, private val showHidden: () -
 
     val selecting get() = selected.isNotEmpty()
 
-    fun selectedEntries(): List<FEntry> = visible.filter { it.name in selected }
+    fun selectedEntries(): List<FEntry> = visible.filter { it.pathName in selected }
 }

@@ -35,6 +35,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import app.twinfile.cloud.CloudAccount
+import app.twinfile.cloud.CloudProvider
+import app.twinfile.cloud.CloudLoginCancelled
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.twinfile.fs.FEntry
 import app.twinfile.ops.Archive
 import app.twinfile.ops.Ops
@@ -53,6 +62,55 @@ class MainActivity : ComponentActivity() {
         vm.syncBoardApproval = null
     }
     private var granted by mutableStateOf(false)
+    private val googleAuthorization = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode != RESULT_OK) {
+            vm.cloudBusy = false
+            vm.cloudStatus = "已取消登录"
+        } else {
+            val token = runCatching { vm.app.cloud.auth.googleResult(result.data) }
+            token.onSuccess(::finishGoogleLogin).onFailure { cloudLoginFailed() }
+        }
+    }
+
+    private fun cloudLoginFailed(cause: Throwable? = null) {
+        vm.cloudBusy = false
+        vm.cloudStatus = if (cause is CloudLoginCancelled) "已取消登录" else "云盘登录失败，请检查网络、账号授权和应用配置后重试"
+    }
+
+    private fun finishGoogleLogin(token: String) {
+        lifecycleScope.launch {
+            try {
+                val account = withContext(Dispatchers.IO) { vm.app.cloud.auth.identifyGoogle(token).also { vm.app.cloud.validate(it) } }
+                vm.cloudConnected(account)
+            } catch (_: Exception) { cloudLoginFailed() }
+        }
+    }
+
+    private fun connectCloud(provider: CloudProvider) {
+        if (vm.cloudBusy) return
+        vm.cloudBusy = true
+        vm.cloudStatus = null
+        val auth = vm.app.cloud.auth
+        if (provider == CloudProvider.GOOGLE) {
+            auth.startGoogle(this, { pending ->
+                try { googleAuthorization.launch(IntentSenderRequest.Builder(pending.intentSender).build()) }
+                catch (_: Exception) { cloudLoginFailed() }
+            }) { result -> result.onSuccess(::finishGoogleLogin).onFailure { cloudLoginFailed() } }
+        } else lifecycleScope.launch {
+            try {
+                val client = withContext(Dispatchers.IO) { auth.microsoft() }
+                auth.startMicrosoft(this@MainActivity, client) { result ->
+                    lifecycleScope.launch {
+                        try {
+                            val account = result.getOrThrow()
+                            withContext(Dispatchers.IO) { vm.app.cloud.validate(account) }
+                            vm.cloudConnected(account)
+                        } catch (e: Exception) { cloudLoginFailed(e) }
+                    }
+                }
+            } catch (_: Exception) { cloudLoginFailed() }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,6 +246,10 @@ class MainActivity : ComponentActivity() {
             Screen.NETWORK -> NetworkScreen(vm, back) { c ->
                 screen = Screen.MAIN
                 vm.openSource(vm.active, c.sourceId)
+            }
+            Screen.CLOUD -> CloudScreen(vm, back, ::connectCloud) { account ->
+                screen = Screen.MAIN
+                vm.openSource(vm.active, account.sourceId)
             }
             Screen.PC -> PcScreen(vm, back) { pc ->
                 screen = Screen.MAIN

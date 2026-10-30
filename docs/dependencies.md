@@ -45,3 +45,10 @@
 - XZ for Java 1.10：7z 的 LZMA/LZMA2 编解码。
 
 新增库使用 Apache-2.0 或公共领域许可；具体条款以各项目发布包为准。
+
+## 云盘授权依赖
+
+- Google Play services Auth 22.0.0：Android 原生用户授权。
+- MSAL Android 8.6.0：Microsoft 公共客户端授权和凭据缓存。其 display-mask 依赖来自微软官方 Duo SDK Maven feed，仓库按模块限制读取范围。
+- Tink 1.17.0：补齐 MSAL/Nimbus JOSE 的现代曲线加密依赖，避免以忽略缺失加密类的方式通过 R8。
+- 云盘文件操作复用 OkHttp，不引入完整 Google Drive / Graph SDK。历史体积表不包含这些新增授权依赖。

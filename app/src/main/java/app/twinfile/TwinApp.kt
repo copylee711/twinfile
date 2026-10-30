@@ -27,6 +27,8 @@ class TwinApp : Application() {
     val sources: MutableMap<String, FileSource> = java.util.concurrent.ConcurrentHashMap()
     lateinit var net: NetManager
         private set
+    lateinit var cloud: app.twinfile.cloud.CloudManager
+        private set
     lateinit var pc: PcManager
         private set
 
@@ -42,6 +44,7 @@ class TwinApp : Application() {
         trash = Trash { path -> Volumes.of(this, path)?.path }
         applyPrivMode()
         net = NetManager(this)
+        cloud = app.twinfile.cloud.CloudManager(this)
         pc = PcManager(this)
     }
 

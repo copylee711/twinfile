@@ -91,9 +91,9 @@ fun ImageViewer(v: Viewer.Images, close: () -> Unit, share: (File) -> Unit, open
         maxOf(c.screenWidthDp, c.screenHeightDp).dp.roundToPx() * 2
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { v.items[it].name }) { page ->
+        HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { v.items[it].pathName }) { page ->
             val e = v.items[page]
-            ZoomableImage(v.source, Paths.join(v.dir, e.name), e, maxPx) { chrome = !chrome }
+            ZoomableImage(v.source, Paths.join(v.dir, e.pathName), e, maxPx) { chrome = !chrome }
         }
         if (chrome) {
             val e = v.items[pager.currentPage]
@@ -109,7 +109,7 @@ fun ImageViewer(v: Viewer.Images, close: () -> Unit, share: (File) -> Unit, open
                         color = Color(0xCCFFFFFF), fontSize = 12.sp)
                 }
                 if (isLocal) {
-                    val f = File(Paths.join(v.dir, e.name))
+                    val f = File(Paths.join(v.dir, e.pathName))
                     IconButton({ share(f) }) { Icon(Icons.Filled.Share, "分享", tint = Color.White) }
                     IconButton({ openExternal(f) }) { Icon(Icons.AutoMirrored.Filled.OpenInNew, "用其他应用打开", tint = Color.White) }
                 }

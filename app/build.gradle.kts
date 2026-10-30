@@ -25,8 +25,11 @@ android {
         applicationId = "app.twinfile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.5.0"
+        buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"${providers.gradleProperty("twinfile.microsoftClientId").orNull ?: System.getenv("TWINFILE_MICROSOFT_CLIENT_ID") ?: ""}\"")
+        buildConfigField("boolean", "GOOGLE_DRIVE_ENABLED", (providers.gradleProperty("twinfile.googleDriveEnabled").orNull ?: System.getenv("TWINFILE_GOOGLE_DRIVE_ENABLED") ?: "false").toBoolean().toString())
+        buildConfigField("String", "GOOGLE_ANDROID_CLIENT_ID", "\"${providers.gradleProperty("twinfile.googleAndroidClientId").orNull ?: System.getenv("TWINFILE_GOOGLE_ANDROID_CLIENT_ID") ?: ""}\"")
     }
 
     signingConfigs {
@@ -91,6 +94,11 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.okhttp)
+    implementation(libs.msal)
+    // Nimbus JOSE (MSAL) references these optional modern curve primitives. Provide
+    // them rather than suppressing R8's missing-crypto checks.
+    implementation(libs.tink)
+    implementation(libs.google.auth)
     implementation(libs.commonmark)
     implementation(libs.commonmark.tables)
     implementation(libs.commonmark.strikethrough)

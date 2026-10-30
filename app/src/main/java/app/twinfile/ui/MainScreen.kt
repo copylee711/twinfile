@@ -108,7 +108,7 @@ sealed interface Dlg {
     data class Compress(val pane: PaneState, val entries: List<FEntry>) : Dlg
 }
 
-enum class Screen { MAIN, TRASH, APPS, NETWORK, PC, SETTINGS }
+enum class Screen { MAIN, TRASH, APPS, NETWORK, CLOUD, PC, SETTINGS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,7 +147,7 @@ fun MainScreen(vm: MainViewModel, navigate: (Screen) -> Unit, openFile: (PaneSta
                 TopBar(vm, onMenu = { scope.launch { drawer.open() } }, show = { dlg = it }, navigate = navigate)
                 val onLong: (PaneState) -> (FEntry) -> Unit = { p ->
                     { e ->
-                        val entries = if (e.name in p.selected) p.selectedEntries() else listOf(e)
+                        val entries = if (e.pathName in p.selected) p.selectedEntries() else listOf(e)
                         dlg = Dlg.Menu(p, entries)
                     }
                 }
@@ -205,13 +205,13 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
             buttons = listOf("确定" to { n: String -> vm.rename(d.pane, d.e, n); close() }),
         )
         is Dlg.Jump -> InputDialog(
-            "跳转到", d.pane.path, onDismiss = close,
+            "跳转到", d.pane.source.displayPath(d.pane.path), onDismiss = close,
             buttons = listOf("前往" to { p: String ->
                 close()
                 var path = Paths.normalize(p.trim().replace('／', '/').replace('\\', '/'))
                 // Resolve links such as /sdcard so volume features (trash, usage) apply.
                 if (d.pane.source === vm.app.local) path = runCatching { File(path).canonicalPath }.getOrDefault(path)
-                vm.open(d.pane, path)
+                vm.jump(d.pane, path)
             }),
         )
         is Dlg.Filter -> InputDialog(
@@ -229,6 +229,7 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
         is Dlg.Props -> PropertiesDialog(d.pane.source, d.pane.path, d.entries, close)
         is Dlg.Delete -> DeleteDialog(
             d.entries.size, d.entries.first().name, vm.canTrash(d.pane), vm.prefs.trashByDefault, close,
+            cloudTrash = d.pane.source is app.twinfile.cloud.CloudSource,
         ) { toTrash -> vm.delete(d.pane, d.entries, toTrash); close() }
         is Dlg.Compress -> CreateArchiveDialog(
             (if (d.entries.size == 1) d.entries[0].name.substringBeforeLast('.').ifEmpty { d.entries[0].name } else Paths.name(d.pane.path)).ifEmpty { "压缩文件" }, close,
@@ -261,7 +262,7 @@ private fun DialogHost(vm: MainViewModel, d: Dlg, close: () -> Unit, show: (Dlg)
                 add(MenuAction("打开方式", Icons.AutoMirrored.Filled.OpenInNew, single != null && !single.isDir) { fileActions.openWith(p, single!!) })
                 add(MenuAction("添加书签", Icons.Filled.Bookmark, single != null) { vm.addBookmark(p, single) })
                 add(MenuAction("复制路径", Icons.Filled.Link) {
-                    val text = es.joinToString("\n") { Paths.join(p.path, it.name) }
+                    val text = es.joinToString("\n") { p.source.displayPath(Paths.join(p.path, it.pathName)) }
                     context.getSystemService(android.content.ClipboardManager::class.java)
                         .setPrimaryClip(android.content.ClipData.newPlainText("path", text))
                     vm.say("已复制路径")
@@ -311,7 +312,7 @@ private fun TopBar(vm: MainViewModel, onMenu: () -> Unit, show: (Dlg) -> Unit, n
                 item("排序方式") { show(Dlg.Sort(pane)) }()
                 item(if (vm.prefs.showHidden) "不显示隐藏文件" else "显示隐藏文件") { vm.prefs.update { showHidden = !showHidden } }()
                 item("添加书签") { vm.addBookmark(pane) }()
-                item("设为首页") { vm.setHome(pane) }()
+                if (pane.source.phonePaths) item("设为首页") { vm.setHome(pane) }()
                 if (vm.prefs.dualPane) item("交换窗口") { vm.swapPanes() }()
                 item(if (vm.prefs.dualPane) "切换为单栏" else "切换为双栏") { vm.prefs.update { dualPane = !dualPane } }()
                 HorizontalDivider()
